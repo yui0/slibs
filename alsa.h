@@ -1,8 +1,20 @@
-//---------------------------------------------------------
-//	Catlive
-//
-//		©2017 Yuichiro Nakada
-//---------------------------------------------------------
+/* public domain Simple, Minimalistic, Audio library for ALSA
+ *	©2017 Yuichiro Nakada
+ *
+ * Latest revisions:
+ * 	1.00 (20-02-2017) initial release
+ *
+ * Basic usage:
+ *	AUDIO a;
+ *	AUDIO_init(&a, "plughw:PCH,0", 48000, 2, 32); // device, 48000 samplerate, 2 channels, 32 frame
+ *	...
+ *	int f = AUDIO_frame(&a); // audio data in a.buffer
+ *	...
+ *	AUDIO_close(&a);
+ *
+ * Notes:
+ *
+ * */
 
 // Use the newer ALSA API
 #define ALSA_PCM_NEW_HW_PARAMS_API
@@ -13,7 +25,6 @@ typedef struct {
 	snd_pcm_uframes_t frames;
 	char *buffer;
 	int size;
-	//long loops;
 } AUDIO;
 
 void AUDIO_init(AUDIO *this, char *dev, unsigned int val, int ch, int frames)
@@ -39,12 +50,10 @@ void AUDIO_init(AUDIO *this, char *dev, unsigned int val, int ch, int frames)
 	// Signed 16-bit little-endian format
 	snd_pcm_hw_params_set_format(this->handle, params, SND_PCM_FORMAT_S16_LE);
 
-	// Two channels (stereo)
-//	snd_pcm_hw_params_set_channels(this->handle, params, 2);
+	// Channels
 	snd_pcm_hw_params_set_channels(this->handle, params, ch);
 
 	// 44100 bits/second sampling rate (CD quality)
-	//unsigned int val = 44100;
 	int dir;
 	snd_pcm_hw_params_set_rate_near(this->handle, params, &val, &dir);
 
@@ -66,7 +75,6 @@ void AUDIO_init(AUDIO *this, char *dev, unsigned int val, int ch, int frames)
 
 	// We want to loop for 5 seconds
 	snd_pcm_hw_params_get_period_time(params, &val, &dir);
-	//this->loops = 5000000 / val;
 }
 
 int AUDIO_frame(AUDIO *this)

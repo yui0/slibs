@@ -1,8 +1,21 @@
-//---------------------------------------------------------
-//	Catlive
-//
-//		©2017 Yuichiro Nakada
-//---------------------------------------------------------
+/* public domain Simple, Minimalistic, Video4Linux library
+ *	©2017 Yuichiro Nakada
+ *
+ * Latest revisions:
+ * 	1.00 (21-02-2017) initial release
+ *
+ * Basic usage:
+ *	VIDEO_init(&video, "/dev/video0", 640, 480);
+ *	VIDEO_captureStart(&video);
+ *	...
+ *	VIDEO_frameRead(&video); // video data in video.rgb, video.width, video.height
+ *	...
+ *	VIDEO_captureStop(&video);
+ *	VIDEO_close(&video);
+ *
+ * Notes:
+ *
+ * */
 
 // compile with all three access methods
 #if !defined(IO_READ) && !defined(IO_MMAP) && !defined(IO_USERPTR)
@@ -551,7 +564,7 @@ static void VIDEO_deviceOpen(VIDEO *thiz)
 
 	// stat file
 	if (-1 == stat(thiz->deviceName, &st)) {
-		fprintf(stderr, "Cannot identify '%s': %d, %s\n", thiz->deviceName, errno, strerror(errno));
+		fprintf(stderr, "Can't identify '%s': %d, %s\n", thiz->deviceName, errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 
@@ -564,7 +577,7 @@ static void VIDEO_deviceOpen(VIDEO *thiz)
 	// open device
 	thiz->fd = open(thiz->deviceName, O_RDWR /* required */ | O_NONBLOCK, 0);
 	if (-1 == thiz->fd) {
-		fprintf(stderr, "Cannot open '%s': %d, %s\n", thiz->deviceName, errno, strerror(errno));
+		fprintf(stderr, "Can't open '%s': %d, %s\n", thiz->deviceName, errno, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 }
@@ -583,7 +596,7 @@ void VIDEO_init(VIDEO *thiz, char *dev, int w, int h)
 	thiz->buffers = 0;
 	thiz->n_buffers = 0;
 	thiz->io = IO_METHOD_MMAP;
-	thiz->deviceName = dev;	// "/dev/video0"
+	thiz->deviceName = dev;
 	thiz->width = w;
 	thiz->height = h;
 	thiz->rgb = 0;
