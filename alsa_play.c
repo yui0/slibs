@@ -6,7 +6,8 @@
 
 int main(int argc, char *argv[])
 {
-	char *dev = "hw:0,0"; //"default";
+	//char *dev = "default";	// "plughw:0,0"
+	char *dev = "hw:0,0";		// BitPerfect
 	if (argc>1) dev = argv[1];
 
 	char *name = "alsa_record.dat";

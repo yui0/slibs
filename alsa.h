@@ -2,6 +2,7 @@
  *	©2017 Yuichiro Nakada
  *
  * Latest revisions:
+ * 	1.01 (14-03-2017) bug fix
  * 	1.00 (20-02-2017) initial release
  *
  * Basic usage:

@@ -18,9 +18,11 @@ int main(int argc, char *argv[])
 	do {
 		int f = AUDIO_frame(&a); 	// audio data in a.buffer
 
-		FILE *fp = fopen(name, "ab");
-		fwrite(a.buffer, a.size, 1, fp);
-		fclose(fp);
+		if (f == a.frames) {
+			FILE *fp = fopen(name, "ab");
+			fwrite(a.buffer, a.size, 1, fp);
+			fclose(fp);
+		}
 	} while (1);
 
 	AUDIO_close(&a);
