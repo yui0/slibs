@@ -141,11 +141,8 @@ static int VIDEO_frameRead(VIDEO *thiz)
 			case EAGAIN:
 				return 0;
 
-			case EIO:
-			// Could ignore EIO, see spec.
-
-			// fall through
-			default:
+			case EIO:	// Could ignore EIO, see spec.
+			default:	// fall through
 				errno_exit("read");
 			}
 		}
@@ -163,11 +160,8 @@ static int VIDEO_frameRead(VIDEO *thiz)
 			case EAGAIN:
 				return 0;
 
-			case EIO:
-			// Could ignore EIO, see spec
-
-			// fall through
-			default:
+			case EIO:	// Could ignore EIO, see spec.
+			default:	// fall through
 				errno_exit("VIDIOC_DQBUF");
 			}
 		}
@@ -190,11 +184,8 @@ static int VIDEO_frameRead(VIDEO *thiz)
 			case EAGAIN:
 				return 0;
 
-			case EIO:
-			// Could ignore EIO, see spec.
-
-			// fall through
-			default:
+			case EIO:	// Could ignore EIO, see spec.
+			default:	// fall through
 				errno_exit("VIDIOC_DQBUF");
 			}
 		}

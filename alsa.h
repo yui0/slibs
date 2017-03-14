@@ -27,12 +27,12 @@ typedef struct {
 	int size;
 } AUDIO;
 
-void AUDIO_init(AUDIO *thiz, char *dev, unsigned int val, int ch, int frames)
+void AUDIO_init(AUDIO *thiz, char *dev, unsigned int val, int ch, int frames, int flag)
 {
-	// Open PCM device for recording (capture).
-	int rc = snd_pcm_open(&thiz->handle, dev, SND_PCM_STREAM_CAPTURE, 0);
+	// Open PCM device.
+	int rc = snd_pcm_open(&thiz->handle, dev, flag ? SND_PCM_STREAM_PLAYBACK : SND_PCM_STREAM_CAPTURE, 0);
 	if (rc < 0) {
-		fprintf(stderr, "unable to open pcm device: %s\n", snd_strerror(rc));
+		fprintf(stderr, "unable to open pcm device '%s': %s\n", dev, snd_strerror(rc));
 		exit(1);
 	}
 
@@ -73,7 +73,6 @@ void AUDIO_init(AUDIO *thiz, char *dev, unsigned int val, int ch, int frames)
 	thiz->size = thiz->frames * 2 * ch; /* 2 bytes/sample, 2 channels */
 	thiz->buffer = (char*)malloc(thiz->size);
 
-	// We want to loop for 5 seconds
 	snd_pcm_hw_params_get_period_time(params, &val, &dir);
 }
 
@@ -88,6 +87,22 @@ int AUDIO_frame(AUDIO *thiz)
 		fprintf(stderr, "error from read: %s\n", snd_strerror(rc));
 	} else if (rc != (int)thiz->frames) {
 		fprintf(stderr, "short read, read %d frames\n", rc);
+	}
+	return rc;
+}
+
+int AUDIO_play(AUDIO *thiz)
+{
+	int rc = snd_pcm_writei(thiz->handle, thiz->buffer, thiz->frames);
+	if (rc == -EPIPE) {
+		// EPIPE means overrun
+		fprintf(stderr, "overrun occurred\n");
+		//snd_pcm_recover(thiz->handle, rc, 0);
+		snd_pcm_prepare(thiz->handle);
+	} else if (rc < 0) {
+		fprintf(stderr, "error from write: %s\n", snd_strerror(rc));
+	} else if (rc != (int)thiz->frames) {
+		fprintf(stderr, "short write, write %d frames\n", rc);
 	}
 	return rc;
 }
