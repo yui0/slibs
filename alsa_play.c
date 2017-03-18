@@ -21,8 +21,9 @@ int main(int argc, char *argv[])
 	do {
 		if (!fread(a.buffer, a.size, 1, fp)) break;
 		//if (feof(fp)) break;
-		frame = AUDIO_play(&a);
+		frame = AUDIO_play0(&a);
 		//printf("%d ", frame);
+		AUDIO_wait(&a, 100);
 	} while (1);
 	fclose(fp);
 
