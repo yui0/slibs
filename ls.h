@@ -4,11 +4,9 @@
  * */
 
 #include <dirent.h>
-//#include <unistd.h>
 #include <sys/stat.h>
 
 typedef struct {
-	//int num;
 	int status;
 	char d_name[PATH_MAX];
 } LS_LIST;
@@ -23,7 +21,7 @@ int count_dir(char *dir, int flag)
 		perror("opendir");
 		return 0;
 	}
-	char *cpath = get_current_dir_name();
+	char *cpath = getcwd(0, 0);
 	chdir(dir);
 
 	int i=0;
@@ -61,7 +59,7 @@ int seek_dir(char *dir, LS_LIST *ls, int flag)
 		printf("%s\n", dir);
 		return 0;
 	}
-	char *cpath = get_current_dir_name();
+	char *cpath = getcwd(0, 0);
 	chdir(dir);
 
 	int i=0;
@@ -73,17 +71,12 @@ int seek_dir(char *dir, LS_LIST *ls, int flag)
 
 		stat(entry->d_name, &statbuf);
 		if (S_ISDIR(statbuf.st_mode)) {
-			//sprintf(buf, "%s/", entry->d_name);
-			//strcpy((ls+i)->d_name, buf);
 			(ls+i)->status = 1;
 
-			//if (flag) printf("+%s\n", buf);
 			if (flag) i += seek_dir(buf, ls+i+1, flag);
 		} else {
-			//strcpy((ls+i)->d_name, entry->d_name);
 			(ls+i)->status = 0;
 		}
-		//(ls+i)->num = i;
 		i++;
 	}
 
