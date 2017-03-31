@@ -6,12 +6,15 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
+#define LS_RECURSIVE	1
+#define LS_RANDOM	2
+
 typedef struct {
 	int status;
 	char d_name[PATH_MAX];
 } LS_LIST;
 
-int count_dir(char *dir, int flag)
+int ls_count_dir(char *dir, int flag)
 {
 	DIR *dp;
 	struct dirent *entry;
@@ -28,12 +31,12 @@ int count_dir(char *dir, int flag)
 	while ((entry = readdir(dp))) {
 		if (!strcmp(".", entry->d_name) || !strcmp("..", entry->d_name)) continue;
 
-		if (flag) {
+		if (flag & LS_RECURSIVE) {
 			stat(entry->d_name, &statbuf);
 			if (S_ISDIR(statbuf.st_mode)) {
 				char path[PATH_MAX];
 				sprintf(path, "%s/%s", dir, entry->d_name);
-				i += count_dir(path, flag);
+				i += ls_count_dir(path, flag);
 			}
 		}
 
@@ -47,7 +50,7 @@ int count_dir(char *dir, int flag)
 	return i;
 }
 	
-int seek_dir(char *dir, LS_LIST *ls, int flag)
+int ls_seek_dir(char *dir, LS_LIST *ls, int flag)
 {
 	DIR *dp;
 	struct dirent *entry;
@@ -73,7 +76,7 @@ int seek_dir(char *dir, LS_LIST *ls, int flag)
 		if (S_ISDIR(statbuf.st_mode)) {
 			(ls+i)->status = 1;
 
-			if (flag) i += seek_dir(buf, ls+i+1, flag);
+			if (flag & LS_RECURSIVE) i += ls_seek_dir(buf, ls+i+1, flag);
 		} else {
 			(ls+i)->status = 0;
 		}
@@ -87,14 +90,14 @@ int seek_dir(char *dir, LS_LIST *ls, int flag)
 	return i;
 }
 
-int comp_func(const void *a, const void *b)
+int ls_comp_func(const void *a, const void *b)
 {
 	return (strcmp((char*)(((LS_LIST*)a)->d_name), (char*)(((LS_LIST*)b)->d_name)));
 }
 
 LS_LIST *ls_dir(char *dir, int flag, int *num)
 {
-	int n = count_dir(dir, flag);
+	int n = ls_count_dir(dir, flag);
 	if (!n) {
 		fprintf(stderr, "No file found [%s]!!\n", dir);
 		return 0;
@@ -106,9 +109,19 @@ LS_LIST *ls_dir(char *dir, int flag, int *num)
 		return 0;
 	}
 
-	if (!seek_dir(dir, ls, flag)) return 0;
+	if (!ls_seek_dir(dir, ls, flag)) return 0;
 
-	qsort(ls, n, sizeof(LS_LIST), comp_func);
+	if (flag & LS_RANDOM) {
+		for (int i=0; i<n; i++) {
+			int a = rand()%n;
+			LS_LIST b = ls[i];
+			ls[i] = ls[a];
+			ls[a] = b;
+		}
+	} else {
+		qsort(ls, n, sizeof(LS_LIST), ls_comp_func);
+	}
+
 	*num = n;
 	return ls;
 }
