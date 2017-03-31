@@ -1,3 +1,7 @@
+/* public domain Simple, Minimalistic, kbhit function
+ *	©2017 Yuichiro Nakada
+ * */
+
 #include <termios.h>
 #include <unistd.h>   // for read()
 

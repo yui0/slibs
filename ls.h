@@ -1,6 +1,9 @@
 /* public domain Simple, Minimalistic, making list of files and directories
  *	©2017 Yuichiro Nakada
  *
+ * Basic usage:
+ *	int num;
+ *	LS_LIST *ls = ls_dir("dir/", LS_RECURSIVE|LS_RANDOM, &num);
  * */
 
 #include <dirent.h>
@@ -112,6 +115,7 @@ LS_LIST *ls_dir(char *dir, int flag, int *num)
 	if (!ls_seek_dir(dir, ls, flag)) return 0;
 
 	if (flag & LS_RANDOM) {
+		srand(time(NULL));
 		for (int i=0; i<n; i++) {
 			int a = rand()%n;
 			LS_LIST b = ls[i];
