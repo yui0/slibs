@@ -2,9 +2,11 @@
  *	©2017 Yuichiro Nakada
  * */
 
+#ifndef RANDOM_H
+
 #define XOR128_MAX	18446744073709551615.0
 
-typedef unsigned long long	uint64_t;
+typedef unsigned long int	uint64_t;
 
 // The state must be seeded so that it is not everywhere zero.
 uint64_t xor128_seed[2];
@@ -27,3 +29,4 @@ uint64_t xor128()
 
 #define frand()		( xor128() / ((double)XOR128_MAX + 1.0f) )
 
+#endif

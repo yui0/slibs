@@ -115,9 +115,17 @@ LS_LIST *ls_dir(char *dir, int flag, int *num)
 	if (!ls_seek_dir(dir, ls, flag)) return 0;
 
 	if (flag & LS_RANDOM) {
+#ifdef RANDOM_H
+		xor128_init(time(NULL));
+#else
 		srand(time(NULL));
+#endif
 		for (int i=0; i<n; i++) {
+#ifdef RANDOM_H
+			int a = xor128()%n;
+#else
 			int a = rand()%n;
+#endif
 			LS_LIST b = ls[i];
 			ls[i] = ls[a];
 			ls[a] = b;
