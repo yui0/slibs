@@ -79,11 +79,13 @@ int ls_seek_dir(char *dir, LS_LIST *ls, int flag)
 		if (S_ISDIR(statbuf.st_mode)) {
 			(ls+i)->status = 1;
 
-			if (flag & LS_RECURSIVE) i += ls_seek_dir(buf, ls+i+1, flag);
+			//if (flag & LS_RECURSIVE) i += ls_seek_dir(buf, ls+i+1, flag);
+			if (flag & LS_RECURSIVE) i += ls_seek_dir(buf, ls+i, flag);
 		} else {
 			(ls+i)->status = 0;
+			i++;
 		}
-		i++;
+		//i++;
 	}
 
 	closedir(dp);
