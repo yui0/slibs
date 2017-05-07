@@ -27,7 +27,7 @@ void AUDIO_init(AUDIO *thiz, char *dev, unsigned int val, int ch, int frames, in
 	// Open PCM device.
 	int rc = snd_pcm_open(&thiz->handle, dev, flag ? SND_PCM_STREAM_PLAYBACK : SND_PCM_STREAM_CAPTURE, 0);
 	if (rc < 0) {
-		fprintf(stderr, "unable to open pcm device '%s': %s\n", dev, snd_strerror(rc));
+		fprintf(stderr, "unable to open pcm device '%s' (%s)\n", dev, snd_strerror(rc));
 		exit(1);
 	}
 
@@ -40,17 +40,33 @@ void AUDIO_init(AUDIO *thiz, char *dev, unsigned int val, int ch, int frames, in
 
 	// Set the desired hardware parameters.
 	// Interleaved mode
-	snd_pcm_hw_params_set_access(thiz->handle, params, SND_PCM_ACCESS_RW_INTERLEAVED);
+	rc = snd_pcm_hw_params_set_access(thiz->handle, params, SND_PCM_ACCESS_RW_INTERLEAVED);
+	if (rc < 0) {
+		fprintf(stderr, "cannot set access type (%s)\n", snd_strerror(rc));
+		exit(1);
+	}
 
 	// Signed 16-bit little-endian format
-	snd_pcm_hw_params_set_format(thiz->handle, params, SND_PCM_FORMAT_S16_LE);
+	rc = snd_pcm_hw_params_set_format(thiz->handle, params, SND_PCM_FORMAT_S16_LE);
+	if (rc < 0) {
+		fprintf(stderr, "cannot set sample format (%s)\n", snd_strerror(rc));
+		exit(1);
+	}
 
 	// Channels
-	snd_pcm_hw_params_set_channels(thiz->handle, params, ch);
+	rc = snd_pcm_hw_params_set_channels(thiz->handle, params, ch);
+	if (rc < 0) {
+		fprintf(stderr, "cannot set channel count (%s)\n", snd_strerror(rc));
+		exit(1);
+	}
 
 	// 44100 bits/second sampling rate (CD quality)
 	int dir;
-	snd_pcm_hw_params_set_rate_near(thiz->handle, params, &val, &dir);
+	rc = snd_pcm_hw_params_set_rate_near(thiz->handle, params, &val, &dir);
+	if (rc < 0) {
+		fprintf(stderr, "cannot set sample rate (%s)\n", snd_strerror(rc));
+		exit(1);
+	}
 
 	// Set period size to 32 frames.
 	thiz->frames = frames;
@@ -59,7 +75,7 @@ void AUDIO_init(AUDIO *thiz, char *dev, unsigned int val, int ch, int frames, in
 	// Write the parameters to the driver
 	rc = snd_pcm_hw_params(thiz->handle, params);
 	if (rc < 0) {
-		fprintf(stderr, "unable to set hw parameters: %s\n", snd_strerror(rc));
+		fprintf(stderr, "unable to set parameters (%s)\n", snd_strerror(rc));
 		exit(1);
 	}
 
@@ -79,7 +95,7 @@ int AUDIO_frame(AUDIO *thiz)
 		fprintf(stderr, "overrun occurred\n");
 		snd_pcm_prepare(thiz->handle);
 	} else if (rc < 0) {
-		fprintf(stderr, "error from read: %s\n", snd_strerror(rc));
+		fprintf(stderr, "read failed (%s)\n", snd_strerror(rc));
 	} else if (rc != (int)thiz->frames) {
 		fprintf(stderr, "short read, read %d frames\n", rc);
 	}
@@ -95,7 +111,7 @@ int AUDIO_play(AUDIO *thiz, char *data, int frames)
 		snd_pcm_recover(thiz->handle, rc, 0);
 		//snd_pcm_prepare(thiz->handle);
 	} else if (rc < 0) {
-		fprintf(stderr, "error from write: %s\n", snd_strerror(rc));
+		fprintf(stderr, "write failed (%s)\n", snd_strerror(rc));
 	} else if (rc != frames) {
 		fprintf(stderr, "short write, write %d/%d frames\n", rc, (int)thiz->frames);
 	}
