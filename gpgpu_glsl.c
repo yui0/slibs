@@ -9,18 +9,10 @@ precision highp float;
 
 varying vec2 outTex;
 uniform sampler2D X;
-//uniform int relu;
 
 void main(void)
 {
-//	if (relu == 1) {
-		gl_FragColor = max(texture2D(X, vec2(outTex.x, outTex.y)), 0.0);
-		//gl_FragColor = vec4(2.0,2.0,2.0,2.0);
-		//gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
-		gl_FragColor = vec4(0.0, 0.0, 0.2, 0.1);
-//	} else {
-//		gl_FragColor = texture2D(X, vec2(outTex.x, outTex.y));
-//	}
+	gl_FragColor = max(texture2D(X, vec2(outTex.x, outTex.y)), 0.0);
 }
 
 );
@@ -41,7 +33,6 @@ int32_t main(int32_t argc, char* argv[])
 		1.0, 1.0, 1.0, 1.0,
 	};
 	GLuint texture0 = coCreateDataTexture(M, N, mat);
-	//GLuint texture3 = coCreateOutputTexture(M, N);
 	GLuint texture3 = coCreateDataTexture(M, N, 0);
 	coBindInputTexture(act, texture0, GL_TEXTURE0, "X");
 	coBindOutputTexture(M, N, texture3);
