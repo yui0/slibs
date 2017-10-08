@@ -25,69 +25,6 @@ void main(void)
 
 );
 
-
-#if 0
-#define COMPONENTS_PER_TEXEL	4
-int getPad(int n)
-{
-	int rem = (n % COMPONENTS_PER_TEXEL);
-	return rem == 0 ? 0 : COMPONENTS_PER_TEXEL - rem;
-}
-/*GLuint coCreateDataTexture(int h, int w, float *texels)
-{
-	int rem = (w % COMPONENTS_PER_TEXEL);
-	int pad = rem == 0 ? 0 : COMPONENTS_PER_TEXEL - rem;
-
-	GLuint texture;
-	glGenTextures(1, &texture);
-	glBindTexture(GL_TEXTURE_2D, texture);
-
-	if (pad == 0 || !texels) {
-		// no padding required, write directly from input array
-//		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w / COMPONENTS_PER_TEXEL, h, 0, GL_RGBA, GL_FLOAT, (void*)texels);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, (void*)texels);
-	} else {
-		// must pad each row
-		// create empty texture
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, (w + pad) / COMPONENTS_PER_TEXEL, h, 0, GL_RGBA, GL_FLOAT, 0);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, (w + rem) / COMPONENTS_PER_TEXEL, h, GL_RGBA, GL_FLOAT, texels);
-	}
-
-	// clamp to edge to support non-power of two textures
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	// don't interpolate when getting data from texture
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-
-	// we're done with setup, so unbind current texture
-	glBindTexture(GL_TEXTURE_2D, 0);
-
-	return texture;
-}*/
-GLuint coCreateOutputTexture(int h, int w)
-{
-	// create and bind texture to render to
-	GLuint texture;
-	glGenTextures(1, &texture);
-	glBindTexture(GL_TEXTURE_2D, texture);
-	glTexImage2D(GL_TEXTURE_2D,/*level*/0, GL_RGBA, w + getPad(w), h, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-
-	// clamp to edge to support non-power of two textures
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	// don't interpolate when getting data from texture
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-
-	// we're done with setup, so unbind current texture
-	glBindTexture(GL_TEXTURE_2D, 0);
-
-	return texture;
-}
-#endif
-
-
 int32_t main(int32_t argc, char* argv[])
 {
 	coInit();

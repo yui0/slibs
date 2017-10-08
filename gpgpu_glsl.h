@@ -29,6 +29,7 @@
 			__LINE__, ##__VA_ARGS__ \
 		)
 #endif /* NDEBUG */
+
 //#endif /* _DEBUG_H_ */
 
 
@@ -66,14 +67,12 @@ void coPrintShaderInfo(GLuint shader, const char *str)
 
 GLuint coLoadShader(GLenum shaderType, const char* pSource)
 {
-//	char* pSource = caGetFileContents(name);
 	GLuint shader = glCreateShader(shaderType);
 	glShaderSource(shader, 1, &pSource, 0);
 	glCompileShader(shader);
 	GLint compiled;
 	glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
 	if (!compiled) coPrintShaderInfo(shader, pSource);
-//	free(pSource);
 	return shader;
 }
 
@@ -83,18 +82,9 @@ GLuint coCreateProgram(const char* pFragmentSource)
 	GLuint pixelShader = coLoadShader(GL_FRAGMENT_SHADER, pFragmentSource);
 	GLuint program = glCreateProgram();
 	glAttachShader(program, __vertexShader);
-	//glDeleteShader(__vertexShader);
 	glAttachShader(program, pixelShader);
 	glDeleteShader(pixelShader);
-//	glBindAttribLocation(program, 1/*TEXTURE*/, "tex");
-//	glBindAttribLocation(program, 0/*VERTEX*/, "outTex");
-//	glBindAttribLocation(program, 1/*TEXTURE*/, "outTex");
-//	glBindAttribLocation(program, 0/*VERTEX*/, "tex");
-//	glBindFragDataLocation(program, 0, "gl_FragColor");
 	glLinkProgram(program);
-	//GLint linkStatus = GL_FALSE;
-	//glGetProgramiv(program, GL_LINK_STATUS, &linkStatus);
-//	glUseProgram(program);
 	return program;
 }
 
