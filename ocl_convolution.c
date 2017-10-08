@@ -1,5 +1,7 @@
+// ©2017 Yuichiro Nakada
 // clang -Os convolution.c -o convolution `pkg-config --libs --cflags OpenCL`
 // clang -Os convolution.c -o convolution -framework opencl
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>

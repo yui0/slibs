@@ -10,6 +10,7 @@ Single file libraries for C/C++.
 |**kbhit.h** | utils | 64 | public domain | kbhit function for linux [sample: https://github.com/yui0/aplay-]
 |**ls.h** | utils | 140 | public domain | making list of files and directories [sample: https://github.com/yui0/aplay-]
 |**random.h** | math | 32 | public domain | random function
+|**gpgpu_glsl.h** | GPGPU | 284 | public domain | OpenGLES2 frameworks
 |**ocl.h** | GPGPU | 190 | public domain | OpenCL frameworks
 |**jo_mpeg.h** | video | 317 | public domain | MPEG1/2 encoder [http://www.jonolick.com/home/mpeg-video-writer]
 |**minimp3.h** | audio | 2671 | LGPL | MP3 decoder [http://www.murga-linux.com/puppy/viewtopic.php?t=59417]
