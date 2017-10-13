@@ -4,9 +4,23 @@
 //		©2017 Yuichiro Nakada
 //---------------------------------------------------------
 
+#define GPGPU_USE_GLFW
+#ifdef GPGPU_USE_GLFW
+#define GPGPU_GLES_HIGHP
+#ifndef GL_GLEXT_PROTOTYPES
+#define GL_GLEXT_PROTOTYPES
+#endif
+#include <GL/gl.h>
+#include <GL/glu.h>
+#include <GL/glext.h>
+#else
+#define GPGPU_GLES_HIGHP	precision highp float;
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
+#define GL_CLAMP_TO_BORDER	GL_CLAMP_TO_BORDER_OES
+#endif
 #include <assert.h>
 #include <fcntl.h>
 #include <gbm.h>
@@ -14,6 +28,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+
 
 //#ifndef _DEBUG_H_
 //#define _DEBUG_H_
@@ -39,16 +54,16 @@
 // vertex
 char pass_through[] = STRINGIFY(
 
-precision highp float;
+GPGPU_GLES_HIGHP
 
 attribute vec3 pos;
 attribute vec2 tex;
-varying vec2   outTex;
+varying vec2   uv;
 
 void main(void)
 {
 	gl_Position = vec4(pos, 1.0);
-	outTex = tex;
+	uv = tex;
 }
 
 );
@@ -88,8 +103,10 @@ GLuint coCreateProgram(const char* pFragmentSource)
 	return program;
 }
 
-void coBindVertices(GLuint program)
+void coBindVertices(GLuint prog)
 {
+	glUseProgram(prog);
+
 	// bind vertices
 	GLuint vertexBuffer;
 	glGenBuffers(1, &vertexBuffer);
@@ -100,7 +117,7 @@ void coBindVertices(GLuint program)
 		 1.0,  1.0, 0.0,	// top right
 		-1.0,  1.0, 0.0 };	// top left
 	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), (void*)vertices, GL_STATIC_DRAW);
-	GLuint position = glGetAttribLocation(program, "pos");
+	GLuint position = glGetAttribLocation(prog, "pos");
 	glVertexAttribPointer(position, /*item size*/3, GL_FLOAT, GL_FALSE, 0, 0);
 	glEnableVertexAttribArray(position);
 
@@ -113,8 +130,8 @@ void coBindVertices(GLuint program)
 		1.0, 0.0,
 		1.0, 1.0,
 		0.0, 1.0 };
-	glBufferData(GL_ARRAY_BUFFER, sizeof(textureCoords), textureCoords, GL_STATIC_DRAW);
-	GLuint texture = glGetAttribLocation(program, "tex");
+	glBufferData(GL_ARRAY_BUFFER, sizeof(textureCoords), (void*)textureCoords, GL_STATIC_DRAW);
+	GLuint texture = glGetAttribLocation(prog, "tex");
 	glVertexAttribPointer(texture, /*item size*/2, GL_FLOAT, GL_FALSE, 0, 0);
 	glEnableVertexAttribArray(texture);
 
@@ -130,17 +147,23 @@ void coBindVertices(GLuint program)
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(vIndices), (void*)vIndices, GL_STATIC_DRAW);
 }
 
-GLuint coCreateDataTexture(int h, int w, void *texels)
+GLuint coCreateDataTexture(int h, int w, void *texels, GLuint type)
 {
 	GLuint texture;
 	glGenTextures(1, &texture);
 	glBindTexture(GL_TEXTURE_2D, texture);
 
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, texels);
+#ifdef GPGPU_USE_GLFW
+	glTexImage2D(GL_TEXTURE_2D, 0, (type==GL_FLOAT ? GL_RGBA32F : GL_RGBA), w, h, 0, GL_RGBA, type, texels);
+#else
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, /*GL_UNSIGNED_BYTE*/type, texels);
+#endif
 
 	// clamp to edge to support non-power of two textures
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);	// 0 padding
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 	// don't interpolate when getting data from texture
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -158,7 +181,6 @@ void coBindInputTexture(GLuint program, GLuint texture, GLuint textureUnit, char
 
 	GLuint sampler = glGetUniformLocation(program, name);
 	glUniform1i(sampler, textureUnit - GL_TEXTURE0);
-
 }
 
 GLuint coBindOutputTexture(int M, int N, GLuint texture)
@@ -169,9 +191,19 @@ GLuint coBindOutputTexture(int M, int N, GLuint texture)
 	GLuint framebuffer;
 	glGenFramebuffers(1, &framebuffer);
 	glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, /*level*/0);
+
+	/*GLuint renderbuffer;
+	glGenRenderbuffers(1, &renderbuffer);
+	glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, N, M);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,  GL_RENDERBUFFER, renderbuffer);*/
+	//glBindRenderbuffer(GL_RENDERBUFFER, 0);
+	//glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+		debug("glGetError: %d",glGetError());
+		debug("glCheckFramebufferStatus: %d", glCheckFramebufferStatus(GL_FRAMEBUFFER));
 		assert(!"Bound framebuffer is not complete.");
 	}
 
@@ -184,11 +216,24 @@ void coUnbindInputTexture(GLuint texture)
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-float *coReadData(int M, int N, float *d)
+void *coReadData(int M, int N, void *d)
 {
-	if (!d) d = malloc(sizeof(float)*M*N);
+	if (!d) d = malloc(4*M*N);
 	glReadPixels(0, 0, N, M, GL_RGBA, GL_UNSIGNED_BYTE, d);
 	return d; // M x N
+}
+
+float *coReadDataf(int M, int N, float *d)
+{
+/*#ifdef GPGPU_USE_GLFW
+	if (!d) d = malloc(sizeof(float)*4*M*N);
+	glReadPixels(0, 0, N, M, GL_RGBA32F, GL_FLOAT, d);
+#else*/
+	if (!d) d = malloc(sizeof(float)*4*M*N);
+	//glReadPixels(0, 0, N*4, M, GL_RGBA, GL_FLOAT, d);
+	glReadPixels(0, 0, N, M, GL_RGBA, GL_FLOAT, d);
+//#endif
+	return d;
 }
 
 #define coCompute()	{\
@@ -196,25 +241,30 @@ float *coReadData(int M, int N, float *d)
 }
 
 
-#if 0
+#ifdef GPGPU_USE_GLFW
 #define GLFW_INCLUDE_GLU
 #include <GLFW/glfw3.h>
 void coInit()
 {
 	GLFWwindow* window;
-	if (!glfwInit()) return -1;
+	assert(glfwInit() != 0);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 	glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
+	glfwWindowHint(GLFW_VISIBLE, 0);
 	window = glfwCreateWindow(320, 240, "Catgl", 0, 0);
 	if (!window) {
 		glfwTerminate();
-		return -1;
+		assert(!"glfwCreateWindow error!");
 	}
 	glfwMakeContextCurrent(window);
 }
-#endif
 
+void coTerm()
+{
+}
+
+#else
 
 int32_t __fd;
 struct gbm_device *__gbm;
@@ -272,3 +322,4 @@ void coTerm()
 	gbm_device_destroy(__gbm);
 	close(__fd);
 }
+#endif
