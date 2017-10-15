@@ -7,13 +7,10 @@ char conv2d[] = STRINGIFY(
 #define INPUTPLANE 1
 GPGPU_GLES_HIGHP
 uniform sampler2D X;
+uniform vec2 pixSize;
 uniform mat3 weight[128];
-//uniform vec2 pixSize;
 uniform float bias;
 varying vec2 uv;
-
-//vec2 pixSize = vec2(1.0/4096, 1.0/2048);
-vec2 pixSize = vec2(0.25, 0.25);
 
 void main() {
 	vec4 inputOffset[1];
@@ -21,29 +18,38 @@ void main() {
 	float sum = 0.0;
 	for (int i=0; i<INPUTPLANE; i++) {
 		vec2 tuv = uv + inputOffset[i].xy;
-		mat3 pix = mat3(
-		    vec3(texture2D(X, tuv + vec2(-pixSize.x, -pixSize.y)).x,
-			 texture2D(X, tuv + vec2(       0.0, -pixSize.y)).x,
-			 texture2D(X, tuv + vec2( pixSize.x, -pixSize.y)).x),
-		    vec3(texture2D(X, tuv + vec2(-pixSize.x,        0.0)).x,
-			 texture2D(X, tuv + vec2(       0.0,        0.0)).x,
-			 texture2D(X, tuv + vec2( pixSize.x,        0.0)).x),
-		    vec3(texture2D(X, tuv + vec2(-pixSize.x,  pixSize.y)).x,
-			 texture2D(X, tuv + vec2(       0.0,  pixSize.y)).x,
-			 texture2D(X, tuv + vec2( pixSize.x,  pixSize.y)).x)
-		);
-		sum += dot(weight[i][0].xyz, pix[0].xyz);
-		sum += dot(weight[i][1].xyz, pix[1].xyz);
-		sum += dot(weight[i][2].xyz, pix[2].xyz);
-	//gl_FragColor = vec4(pix[0], 0.0);
+
+		vec4 p[9];
+		p[0] = texture2D(X, tuv + vec2(-pixSize.x, -pixSize.y));
+		p[1] = texture2D(X, tuv + vec2(       0.0, -pixSize.y));
+		p[2] = texture2D(X, tuv + vec2( pixSize.x, -pixSize.y));
+		p[3] = texture2D(X, tuv + vec2(-pixSize.x,        0.0));
+		p[4] = texture2D(X, tuv + vec2(       0.0,        0.0));
+		p[5] = texture2D(X, tuv + vec2( pixSize.x,        0.0));
+		p[6] = texture2D(X, tuv + vec2(-pixSize.x,  pixSize.y));
+		p[7] = texture2D(X, tuv + vec2(       0.0,  pixSize.y));
+		p[8] = texture2D(X, tuv + vec2( pixSize.x,  pixSize.y));
+		mat3 pix[4];
+		pix[0] = mat3(  p[0].x, p[1].x, p[2].x,
+				p[3].x, p[4].x, p[5].x,
+				p[6].x, p[7].x, p[8].x);
+		/*pix[1] = mat3(  p[0].y, p[1].y, p[2].y,
+				p[3].y, p[4].y, p[5].y,
+				p[6].y, p[7].y, p[8].y);
+		pix[2] = mat3(  p[0].z, p[1].z, p[2].z,
+				p[3].z, p[4].z, p[5].z,
+				p[6].z, p[7].z, p[8].z);
+		pix[3] = mat3(  p[0].w, p[1].w, p[2].w,
+				p[3].w, p[4].w, p[5].w,
+				p[6].w, p[7].w, p[8].w);*/
+
+		sum += dot(weight[i][0].xyz, pix[0][0].xyz);
+		sum += dot(weight[i][1].xyz, pix[0][1].xyz);
+		sum += dot(weight[i][2].xyz, pix[0][2].xyz);
 	}
 //	sum += bias;
 //	sum = max(sum, 0.0) + min(sum, 0.0) * 0.1;
 	gl_FragColor = vec4(sum, sum, sum, 1.0);
-//	gl_FragColor = vec4(texture2D(X,uv).x, 0, 0, 0.0);
-//	gl_FragColor = vec4(texture2D(X,uv+vec2(pixSize.x,0.)).x, 0., 0., 0.);
-//	gl_FragColor = vec4(texture2D(X,uv+vec2(pixSize.x,pixSize.y)).x, 0, 0, 0.0);
-//	gl_FragColor = vec4(texture2D(X,uv+vec2(0.06,0.)).x, 0., 0., 0.);
 }
 
 );
@@ -56,19 +62,13 @@ int32_t main(int32_t argc, char* argv[])
 	coBindVertices(prog);
 
 	int M = 4;
-//	int N = 4*4;
 	int N = 4;
-	float mat[] = {
+	float mat[] = {	// http://www.songho.ca/dsp/convolution/convolution2d_example.html
 		1.0,0.,0.,0., 2.0,0.,0.,0., 3.0,0.,0.,0., 0.0,0.,0.,0.,
 		4.0,0.,0.,0., 5.0,0.,0.,0., 6.0,0.,0.,0., 0.0,0.,0.,0.,
 		7.0,0.,0.,0., 8.0,0.,0.,0., 9.0,0.,0.,0., 0.0,0.,0.,0.,
 		0.0,0.,0.,0., 0.0,0.,0.,0., 0.0,0.,0.,0., 0.0,0.,0.,0.,
 	};
-	/*float w[] = {
-		-1.0, -2.0, -1.0,
-		 0.0,  0.0,  0.0,
-		 1.0,  2.0,  1.0,
-	};*/
 	float w[] = {
 		 1.0,  2.0,  1.0,
 		 0.0,  0.0,  0.0,
@@ -76,13 +76,11 @@ int32_t main(int32_t argc, char* argv[])
 	};
 
 	GLuint texture0 = coCreateDataTexture(M, N, mat, GL_FLOAT);
-//	GLuint texture0 = coCreateDataTexture(M, N, mat, GL_UNSIGNED_BYTE);
-//	GLuint texture3 = coCreateDataTexture(M, N, 0, GL_UNSIGNED_BYTE);
 	GLuint texture3 = coCreateDataTexture(M, N, 0, GL_FLOAT);
 	coBindInputTexture(prog, texture0, GL_TEXTURE0, "X");
 	coBindOutputTexture(M, N, texture3);
-	GLuint mat3 = glGetUniformLocation(prog, "weight");
-	glUniformMatrix3fv(mat3, 1, GL_FALSE, w);
+	coUniform2f(prog, "pixSize", 1.0/N, 1.0/M);
+	coUniformMatrix3fv(prog, "weight", w);
 
 	coCompute();
 
