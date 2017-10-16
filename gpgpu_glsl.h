@@ -17,9 +17,9 @@
 #define GPGPU_GLES_HIGHP	precision highp float;
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
-#include <GLES2/gl2.h>
-#include <GLES2/gl2ext.h>
-#define GL_CLAMP_TO_BORDER	GL_CLAMP_TO_BORDER_OES
+#include <GLES3/gl32.h>
+#include <GLES3/gl3ext.h>
+//#define GL_CLAMP_TO_BORDER	GL_CLAMP_TO_BORDER_OES
 #endif
 #include <assert.h>
 #include <fcntl.h>
@@ -202,7 +202,7 @@ GLuint coBindOutputTexture(int M, int N, GLuint texture)
 	//glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-		debug("glGetError: %d",glGetError());
+		debug("glGetError: %d", glGetError());
 		debug("glCheckFramebufferStatus: %d", glCheckFramebufferStatus(GL_FRAMEBUFFER));
 		assert(!"Bound framebuffer is not complete.");
 	}
@@ -240,6 +240,30 @@ float *coReadDataf(int M, int N, float *d)
 	glDrawElements(GL_TRIANGLES, 3*2, GL_UNSIGNED_SHORT, 0);\
 }
 
+#define coUniform2f(prog, name, v1, v2)	{\
+	GLuint l = glGetUniformLocation(prog, name);\
+	glUniform2f(l, v1, v2);\
+}
+#define coUniformMatrix3fv(prog, name, v)	{\
+	GLuint l = glGetUniformLocation(prog, name);\
+	glUniformMatrix3fv(l, 1, GL_FALSE, v);\
+}
+
+#ifdef GPGPU_USE_GLFW
+#define coTransferData(texture, x, y, w, h, type, pix)	{\
+	glBindTexture(GL_TEXTURE_2D, texture);\
+	glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, GL_RGBA, type, pix);\
+	assert(!glGetError());\
+	glBindTexture(GL_TEXTURE_2D, 0);\
+}
+#else
+#define coTransferData(texture, x, y, w, h, type, pix)	{\
+	glBindTexture(GL_TEXTURE_2D, texture);\
+	glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, GL_RGBA, type, pix);\
+	assert(!glGetError());\
+	glBindTexture(GL_TEXTURE_2D, 0);\
+}
+#endif
 
 #ifdef GPGPU_USE_GLFW
 #define GLFW_INCLUDE_GLU
@@ -248,7 +272,7 @@ void coInit()
 {
 	GLFWwindow* window;
 	assert(glfwInit() != 0);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 	glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
 	glfwWindowHint(GLFW_VISIBLE, 0);
@@ -292,7 +316,7 @@ void coInit()
 	assert(strstr(egl_extension_st, "EGL_KHR_surfaceless_context") != NULL);
 
 	static const EGLint config_attribs[] = {
-		EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+		EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
 		EGL_NONE
 	};
 	EGLConfig cfg;
@@ -305,7 +329,7 @@ void coInit()
 	assert(res);
 
 	static const EGLint attribs[] = {
-		EGL_CONTEXT_CLIENT_VERSION, 2,
+		EGL_CONTEXT_CLIENT_VERSION, 3,
 		EGL_NONE
 	};
 	__core_ctx = eglCreateContext(__egl_dpy, cfg, EGL_NO_CONTEXT, attribs);
