@@ -2,21 +2,21 @@
 #include <stdlib.h>
 #include "gpgpu_glsl.h"
 
-#define DATA_XSIZE	2048
+#define DATA_XSIZE	4096
 #define DATA_YSIZE	2048
-
-//#define xSize	0.00024414062	// 1.0/4096
-#define xSize	0.00048828125	// 1.0/2048
-#define ySize	0.00048828125	// 1.0/2048
+#define KERNEL_ARRAY	9
 
 char conv2d[] = STRINGIFY(
 
-#define INPUTPLANE 1
 #ifdef GL_ES
 precision highp float;
 #endif
+
+#define xSize		1./DATA_XSIZE.
+#define ySize		1./DATA_YSIZE.
+#define INPUTPLANE	1
+
 uniform sampler2D X;
-uniform vec2 pixSize;
 uniform sampler2D W;
 uniform float bias;
 varying vec2 uv;
@@ -35,7 +35,7 @@ void main()
 	inputOffset[0] = vec2(0.0, 0.0);
 	vec4 sum = vec4(0.0, 0.0, 0.0, 0.0);
 	for (int i=0; i<INPUTPLANE; i++) {
-		vec2 tuv = uv*pixSize + inputOffset[i];
+		vec2 tuv = uv*vec2(4./DATA_XSIZE., 4./DATA_YSIZE.) + inputOffset[i];
 
 		vec4 p[9];
 		p[0] = texture2D(X, tuv + vec2(-xSize, -ySize));
@@ -48,8 +48,8 @@ void main()
 		p[7] = texture2D(X, tuv + vec2(   0.0,  ySize));
 		p[8] = texture2D(X, tuv + vec2( xSize,  ySize));
 
-		const vec2 arg = vec2(1./9., 1./9./1.);
-		vec2 pos = arg * (0.0+0.5);
+		const vec2 arg = vec2(1./KERNEL_ARRAY., 1./KERNEL_ARRAY./1.);// arg = vec2(1./size.x, 1./size.x/size.y);
+		vec2 pos = arg * (0.0+0.5);		// arg * (index+0.5)
 		vec4 a[9];
 		a[0] = texture2D(W, pos); pos += arg;	// 1-4
 		a[1] = texture2D(W, pos); pos += arg;	// 5-8
@@ -80,10 +80,6 @@ void main()
 //	sum += bias;
 //	sum = max(sum, 0.0) + min(sum, 0.0) * 0.1;
 	gl_FragColor = sum;
-
-//	gl_FragColor = vec4(sum, uv.x, uv.y, 1.0);
-	/*vec4 w = fetchElement(W, 0., vec2(1./3., 1./3./1.));
-	gl_FragColor = vec4(sum, w.x, w.y, w.z);*/
 }
 
 );
@@ -97,12 +93,6 @@ int32_t main(int32_t argc, char* argv[])
 
 	int M = 4;
 	int N = 4;
-/*	float mat[] = {	// http://www.songho.ca/dsp/convolution/convolution2d_example.html
-		1.0,0.,0.,0., 2.0,0.,0.,0., 3.0,0.,0.,0., 0.0,0.,0.,0.,
-		4.0,0.,0.,0., 5.0,0.,0.,0., 6.0,0.,0.,0., 0.0,0.,0.,0.,
-		7.0,0.,0.,0., 8.0,0.,0.,0., 9.0,0.,0.,0., 0.0,0.,0.,0.,
-		0.0,0.,0.,0., 0.0,0.,0.,0., 0.0,0.,0.,0., 0.0,0.,0.,0.,
-	};*/
 	float mat[] = {	// http://www.songho.ca/dsp/convolution/convolution2d_example.html
 		1.,1.,1.,1., 2.,2.,2.,2., 3.,3.,3.,3., 0.,0.,0.,0.,
 		4.,4.,4.,4., 5.,5.,5.,5., 6.,6.,6.,6., 0.,0.,0.,0.,
@@ -129,12 +119,11 @@ int32_t main(int32_t argc, char* argv[])
 
 	GLuint texture0 = coCreateDataTexture(DATA_YSIZE, DATA_XSIZE, 0, GL_FLOAT);
 	coTransferData(texture0, 0, 0, 4, 4, GL_FLOAT, mat);
-	GLuint texture1 = coCreateDataTexture(1, 9, w, GL_FLOAT);
+	GLuint texture1 = coCreateDataTexture(1, KERNEL_ARRAY, w, GL_FLOAT);
 	GLuint texture3 = coCreateDataTexture(DATA_YSIZE, DATA_XSIZE, 0, GL_FLOAT);
 	coBindInputTexture(prog, texture0, GL_TEXTURE0, "X");
 	coBindInputTexture(prog, texture1, GL_TEXTURE1, "W");
 	coBindOutputTexture(M, N, texture3);
-	coUniform2f(prog, "pixSize", 4.0/DATA_XSIZE, 4.0/DATA_YSIZE);
 
 	coCompute();
 
