@@ -4,7 +4,7 @@ Single file libraries for C/C++.
 
 |library | category | LoC | license | description
 | --------------------- | -------- | --- | --- | --------------------------------
-|**alsa.h** | audio | 121 | public domain | ALSA [sample: https://github.com/yui0/aplay-]
+|**alsa.h** | audio | 138 | public domain | ALSA [sample: https://github.com/yui0/aplay-]
 |**wav.h** | audio | 61 | public domain | Wave format [sample: https://github.com/yui0/aplay-]
 |**v4l2.h** | video | 614 | public domain | video for linux
 |**kbhit.h** | utils | 64 | public domain | kbhit function for linux [sample: https://github.com/yui0/aplay-]

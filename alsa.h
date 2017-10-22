@@ -22,13 +22,13 @@ typedef struct {
 	int size;
 } AUDIO;
 
-void AUDIO_init(AUDIO *thiz, char *dev, unsigned int val, int ch, int frames, int flag)
+int AUDIO_init(AUDIO *thiz, char *dev, unsigned int val, int ch, int frames, int flag)
 {
 	// Open PCM device.
 	int rc = snd_pcm_open(&thiz->handle, dev, flag ? SND_PCM_STREAM_PLAYBACK : SND_PCM_STREAM_CAPTURE, 0);
 	if (rc < 0) {
 		fprintf(stderr, "unable to open pcm device '%s' (%s)\n", dev, snd_strerror(rc));
-		exit(1);
+		return 1;
 	}
 
 	// Allocate a hardware parameters object.
@@ -43,21 +43,21 @@ void AUDIO_init(AUDIO *thiz, char *dev, unsigned int val, int ch, int frames, in
 	rc = snd_pcm_hw_params_set_access(thiz->handle, params, SND_PCM_ACCESS_RW_INTERLEAVED);
 	if (rc < 0) {
 		fprintf(stderr, "cannot set access type (%s)\n", snd_strerror(rc));
-		exit(1);
+		return 1;
 	}
 
 	// Signed 16-bit little-endian format
 	rc = snd_pcm_hw_params_set_format(thiz->handle, params, SND_PCM_FORMAT_S16_LE);
 	if (rc < 0) {
 		fprintf(stderr, "cannot set sample format (%s)\n", snd_strerror(rc));
-		exit(1);
+		return 1;
 	}
 
 	// Channels
 	rc = snd_pcm_hw_params_set_channels(thiz->handle, params, ch);
 	if (rc < 0) {
 		fprintf(stderr, "cannot set channel count (%s)\n", snd_strerror(rc));
-		exit(1);
+		return 1;
 	}
 
 	// 44100 bits/second sampling rate (CD quality)
@@ -65,7 +65,7 @@ void AUDIO_init(AUDIO *thiz, char *dev, unsigned int val, int ch, int frames, in
 	rc = snd_pcm_hw_params_set_rate_near(thiz->handle, params, &val, &dir);
 	if (rc < 0) {
 		fprintf(stderr, "cannot set sample rate (%s)\n", snd_strerror(rc));
-		exit(1);
+		return 1;
 	}
 
 	// Set period size to 32 frames.
@@ -76,7 +76,7 @@ void AUDIO_init(AUDIO *thiz, char *dev, unsigned int val, int ch, int frames, in
 	rc = snd_pcm_hw_params(thiz->handle, params);
 	if (rc < 0) {
 		fprintf(stderr, "unable to set parameters (%s)\n", snd_strerror(rc));
-		exit(1);
+		return 1;
 	}
 
 	// Use a buffer large enough to hold one period
@@ -85,6 +85,7 @@ void AUDIO_init(AUDIO *thiz, char *dev, unsigned int val, int ch, int frames, in
 	thiz->buffer = (char*)malloc(thiz->size);
 
 	snd_pcm_hw_params_get_period_time(params, &val, &dir);
+	return 0;
 }
 
 int AUDIO_frame(AUDIO *thiz)
