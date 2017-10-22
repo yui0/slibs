@@ -43,6 +43,8 @@ int AUDIO_init(AUDIO *thiz, char *dev, unsigned int val, int ch, int frames, int
 	rc = snd_pcm_hw_params_set_access(thiz->handle, params, SND_PCM_ACCESS_RW_INTERLEAVED);
 	if (rc < 0) {
 		fprintf(stderr, "cannot set access type (%s)\n", snd_strerror(rc));
+		snd_pcm_drain(thiz->handle);
+		snd_pcm_close(thiz->handle);
 		return 1;
 	}
 
@@ -50,6 +52,8 @@ int AUDIO_init(AUDIO *thiz, char *dev, unsigned int val, int ch, int frames, int
 	rc = snd_pcm_hw_params_set_format(thiz->handle, params, SND_PCM_FORMAT_S16_LE);
 	if (rc < 0) {
 		fprintf(stderr, "cannot set sample format (%s)\n", snd_strerror(rc));
+		snd_pcm_drain(thiz->handle);
+		snd_pcm_close(thiz->handle);
 		return 1;
 	}
 
@@ -57,6 +61,8 @@ int AUDIO_init(AUDIO *thiz, char *dev, unsigned int val, int ch, int frames, int
 	rc = snd_pcm_hw_params_set_channels(thiz->handle, params, ch);
 	if (rc < 0) {
 		fprintf(stderr, "cannot set channel count (%s)\n", snd_strerror(rc));
+		snd_pcm_drain(thiz->handle);
+		snd_pcm_close(thiz->handle);
 		return 1;
 	}
 
@@ -65,6 +71,8 @@ int AUDIO_init(AUDIO *thiz, char *dev, unsigned int val, int ch, int frames, int
 	rc = snd_pcm_hw_params_set_rate_near(thiz->handle, params, &val, &dir);
 	if (rc < 0) {
 		fprintf(stderr, "cannot set sample rate (%s)\n", snd_strerror(rc));
+		snd_pcm_drain(thiz->handle);
+		snd_pcm_close(thiz->handle);
 		return 1;
 	}
 
@@ -76,6 +84,8 @@ int AUDIO_init(AUDIO *thiz, char *dev, unsigned int val, int ch, int frames, int
 	rc = snd_pcm_hw_params(thiz->handle, params);
 	if (rc < 0) {
 		fprintf(stderr, "unable to set parameters (%s)\n", snd_strerror(rc));
+		snd_pcm_drain(thiz->handle);
+		snd_pcm_close(thiz->handle);
 		return 1;
 	}
 

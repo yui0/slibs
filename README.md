@@ -22,4 +22,4 @@ Single file libraries for C/C++.
 - [Single header libraries for C/C++](https://github.com/vurtun/mmx)
 - [enkiTS: source implementation for mm_sched.h](https://github.com/dougbinks/enkiTS)
 - [Webby: source implementation for mm_web.h](https://github.com/deplinenoise/webby)
-
+- [GPGPU made simple.](https://github.com/turbo/js)
