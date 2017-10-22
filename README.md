@@ -14,6 +14,7 @@ Single file libraries for C/C++.
 |**ocl.h** | GPGPU | 190 | public domain | OpenCL frameworks
 |**jo_mpeg.h** | video | 317 | public domain | MPEG1/2 encoder [http://www.jonolick.com/home/mpeg-video-writer]
 |**minimp3.h** | audio | 2671 | LGPL | MP3 decoder [http://www.murga-linux.com/puppy/viewtopic.php?t=59417]
+|**parson.h** | utils | 2239 | MIT | Lightweight JSON library [https://github.com/kgabis/parson]
 
 ## References
 - [A single-header ANSI C gui library ](https://github.com/vurtun/nuklear)
