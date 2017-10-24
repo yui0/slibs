@@ -5,22 +5,25 @@
 //---------------------------------------------------------
 
 #define GPGPU_USE_GLFW
+
 #ifdef GPGPU_USE_GLFW
-#define GPGPU_GLES_HIGHP
+
 #ifndef GL_GLEXT_PROTOTYPES
 #define GL_GLEXT_PROTOTYPES
 #endif
 #include <GL/gl.h>
 #include <GL/glu.h>
 #include <GL/glext.h>
+
 #else
-#define GPGPU_GLES_HIGHP	precision highp float;
+
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES3/gl32.h>
 #include <GLES3/gl3ext.h>
 //#define GL_CLAMP_TO_BORDER	GL_CLAMP_TO_BORDER_OES
 #endif
+
 #include <assert.h>
 #include <fcntl.h>
 #include <gbm.h>
@@ -54,7 +57,9 @@
 // vertex
 char pass_through[] = STRINGIFY(
 
-GPGPU_GLES_HIGHP
+#ifdef GL_ES
+precision highp float;
+#endif
 
 attribute vec3 pos;
 attribute vec2 tex;
@@ -181,6 +186,7 @@ void coBindInputTexture(GLuint program, GLuint texture, GLuint textureUnit, char
 
 	GLuint sampler = glGetUniformLocation(program, name);
 	glUniform1i(sampler, textureUnit - GL_TEXTURE0);
+	assert(!glGetError());
 }
 
 GLuint coBindOutputTexture(int M, int N, GLuint texture)
@@ -236,28 +242,56 @@ float *coReadDataf(int M, int N, float *d)
 	return d;
 }
 
-#define coCompute()	{\
+#define coCompute() {\
 	glDrawElements(GL_TRIANGLES, 3*2, GL_UNSIGNED_SHORT, 0);\
 }
 
-#define coUniform2f(prog, name, v1, v2)	{\
+#define coAssert() {\
+	assert(!glGetError());\
+}
+
+#define coUniform1i(prog, name, v1) {\
+	GLuint l = glGetUniformLocation(prog, name);\
+	glUniform1i(l, v1);\
+}
+#define coUniform1f(prog, name, v1) {\
+	GLuint l = glGetUniformLocation(prog, name);\
+	glUniform1f(l, v1);\
+}
+#define coUniform2f(prog, name, v1, v2) {\
 	GLuint l = glGetUniformLocation(prog, name);\
 	glUniform2f(l, v1, v2);\
 }
-#define coUniformMatrix3fv(prog, name, v)	{\
+#define coUniform4f(prog, name, v1, v2, v3, v4) {\
+	GLuint l = glGetUniformLocation(prog, name);\
+	glUniform4f(l, v1, v2, v3, v4);\
+}
+#define coUniform1fv(prog, name, count, v1) {\
+	GLuint l = glGetUniformLocation(prog, name);\
+	glUniform1fv(l, count, v1);\
+}
+#define coUniform2fv(prog, name, count, v1) {\
+	GLuint l = glGetUniformLocation(prog, name);\
+	glUniform2fv(l, count, v1);\
+}
+#define coUniform4fv(prog, name, count, v1) {\
+	GLuint l = glGetUniformLocation(prog, name);\
+	glUniform4fv(l, count, v1);\
+}
+#define coUniformMatrix3fv(prog, name, v) {\
 	GLuint l = glGetUniformLocation(prog, name);\
 	glUniformMatrix3fv(l, 1, GL_FALSE, v);\
 }
 
 #ifdef GPGPU_USE_GLFW
-#define coTransferData(texture, x, y, w, h, type, pix)	{\
+#define coTransferData(texture, x, y, w, h, type, pix) {\
 	glBindTexture(GL_TEXTURE_2D, texture);\
 	glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, GL_RGBA, type, pix);\
 	assert(!glGetError());\
 	glBindTexture(GL_TEXTURE_2D, 0);\
 }
 #else
-#define coTransferData(texture, x, y, w, h, type, pix)	{\
+#define coTransferData(texture, x, y, w, h, type, pix) {\
 	glBindTexture(GL_TEXTURE_2D, texture);\
 	glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, GL_RGBA, type, pix);\
 	assert(!glGetError());\

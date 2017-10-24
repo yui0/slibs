@@ -1,4 +1,4 @@
-// clang -Os gpgpu_conv2d.c -o gpgpu_conv2d `pkg-config --libs --cflags glesv2 egl gbm`
+// clang -Os gpgpu_glsl.c -o gpgpu_glsl `pkg-config --libs --cflags glesv2 egl gbm` -lglfw
 #include <stdlib.h>
 #include "gpgpu_glsl.h"
 
