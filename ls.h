@@ -140,3 +140,16 @@ LS_LIST *ls_dir(char *dir, int flag, int *num)
 	return ls;
 }
 
+#include <ctype.h>
+char *findExt(char *path)
+{
+	static char ext[10];
+	char *e = &ext[9];
+	*e-- = 0;
+	int len = strlen(path)-1;
+	for (int i=len; i>len-9; i--) {
+		if (path[i] == '.' ) break;
+		*e-- = tolower(path[i]);
+	}
+	return e+1;
+}
