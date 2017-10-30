@@ -5,29 +5,36 @@
 //---------------------------------------------------------
 
 #define GPGPU_USE_GLFW
-
-#ifdef GPGPU_USE_GLFW
-
 #ifndef GL_GLEXT_PROTOTYPES
 #define GL_GLEXT_PROTOTYPES
 #endif
-#include <GL/gl.h>
-#include <GL/glu.h>
-#include <GL/glext.h>
+#define GLFW_INCLUDE_GLU
 
-#else
-
-#include <EGL/egl.h>
-#include <EGL/eglext.h>
-#include <GLES3/gl32.h>
-#include <GLES3/gl3ext.h>
-//#define GL_CLAMP_TO_BORDER	GL_CLAMP_TO_BORDER_OES
+#ifdef _WIN32
+	#include <windows.h>
+	#include <GL/gl.h>
+#elif __APPLE__
+	#include <OpenGL/gl3.h>
+	//#include <OpenGL/glu.h>
+	//#include <OpenGL/glext.h>
+	#include <GLFW/glfw3.h>
+#elif __linux
+	#ifdef GPGPU_USE_GLFW
+		#include <GL/gl.h>
+		//#include <GL/glu.h>
+		//#include <GL/glext.h>
+		#include <GLFW/glfw3.h>
+	#else
+		#include <EGL/egl.h>
+		#include <EGL/eglext.h>
+		#include <GLES3/gl32.h>
+		#include <GLES3/gl3ext.h>
+		//#define GL_CLAMP_TO_BORDER	GL_CLAMP_TO_BORDER_OES
+	#endif
 #endif
 
 #include <assert.h>
 #include <fcntl.h>
-#include <gbm.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -152,7 +159,9 @@ void coBindVertices(GLuint prog)
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(vIndices), (void*)vIndices, GL_STATIC_DRAW);
 }
 
-GLuint coCreateDataTexture(int h, int w, void *texels, GLuint type)
+#define GPGPU_TEX_PADDING	1
+#define GPGPU_TEX_REPEAT	2
+GLuint coCreateDataTexture(int w, int h, void *texels, GLuint type, int flag)
 {
 	GLuint texture;
 	glGenTextures(1, &texture);
@@ -161,14 +170,16 @@ GLuint coCreateDataTexture(int h, int w, void *texels, GLuint type)
 #ifdef GPGPU_USE_GLFW
 	glTexImage2D(GL_TEXTURE_2D, 0, (type==GL_FLOAT ? GL_RGBA32F : GL_RGBA), w, h, 0, GL_RGBA, type, texels);
 #else
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, /*GL_UNSIGNED_BYTE*/type, texels);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, type, texels);
 #endif
 
+	GLuint clamp = GL_CLAMP_TO_EDGE;
+	if (flag & GPGPU_TEX_PADDING) clamp = GL_CLAMP_TO_BORDER;	// 0 padding
+	if (flag & GPGPU_TEX_REPEAT) clamp = GL_REPEAT;
+
 	// clamp to edge to support non-power of two textures
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);	// 0 padding
-//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, clamp);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, clamp);
 	// don't interpolate when getting data from texture
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -189,7 +200,7 @@ void coBindInputTexture(GLuint program, GLuint texture, GLuint textureUnit, char
 	assert(!glGetError());
 }
 
-GLuint coBindOutputTexture(int M, int N, GLuint texture)
+GLuint coBindOutputTexture(int N, int M, GLuint texture)
 {
 	// set canvas and viewport size
 	glViewport(0, 0, N, M);
@@ -222,14 +233,14 @@ void coUnbindInputTexture(GLuint texture)
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-void *coReadData(int M, int N, void *d)
+void *coReadData(int N, int M, void *d)
 {
 	if (!d) d = malloc(4*M*N);
 	glReadPixels(0, 0, N, M, GL_RGBA, GL_UNSIGNED_BYTE, d);
 	return d; // M x N
 }
 
-float *coReadDataf(int M, int N, float *d)
+float *coReadDataf(int N, int M, float *d)
 {
 /*#ifdef GPGPU_USE_GLFW
 	if (!d) d = malloc(sizeof(float)*4*M*N);
@@ -300,15 +311,13 @@ float *coReadDataf(int M, int N, float *d)
 #endif
 
 #ifdef GPGPU_USE_GLFW
-#define GLFW_INCLUDE_GLU
-#include <GLFW/glfw3.h>
 void coInit()
 {
 	GLFWwindow* window;
 	assert(glfwInit() != 0);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-	glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
+//	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+//	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+//	glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
 	glfwWindowHint(GLFW_VISIBLE, 0);
 	window = glfwCreateWindow(320, 240, "Catgl", 0, 0);
 	if (!window) {

@@ -117,17 +117,17 @@ int32_t main(int32_t argc, char* argv[])
 		-1.0, -2.0, -1.0,
 	};
 
-	GLuint texture0 = coCreateDataTexture(DATA_YSIZE, DATA_XSIZE, 0, GL_FLOAT);
+	GLuint texture0 = coCreateDataTexture(DATA_XSIZE, DATA_YSIZE, 0, GL_FLOAT, GPGPU_TEX_PADDING);
 	coTransferData(texture0, 0, 0, 4, 4, GL_FLOAT, mat);
-	GLuint texture1 = coCreateDataTexture(1, KERNEL_ARRAY, w, GL_FLOAT);
-	GLuint texture3 = coCreateDataTexture(DATA_YSIZE, DATA_XSIZE, 0, GL_FLOAT);
+	GLuint texture1 = coCreateDataTexture(1, KERNEL_ARRAY, w, GL_FLOAT, 0);
+	GLuint texture3 = coCreateDataTexture(DATA_XSIZE, DATA_YSIZE, 0, GL_FLOAT, 0);
 	coBindInputTexture(prog, texture0, GL_TEXTURE0, "X");
 	coBindInputTexture(prog, texture1, GL_TEXTURE1, "W");
-	coBindOutputTexture(M, N, texture3);
+	coBindOutputTexture(N, M, texture3);
 
 	coCompute();
 
-	float *d = coReadDataf(M, N, 0);
+	float *d = coReadDataf(N, M, 0);
 	for (int i=0; i<M; i++) {
 		for (int j=0; j<N*4; j++) printf("%2.2f ", d[i*N*4+j]);
 		printf("\n");
