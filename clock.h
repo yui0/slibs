@@ -2,9 +2,6 @@
  *	©2017 Yuichiro Nakada
  * */
 
-#include <time.h>
-#include <sys/time.h>
-
 #define ANSI_RESET		"\x1b[0m"
 #define ANSI_BLACK		"\033[30m"
 #define ANSI_RED		"\x1b[31m"
@@ -22,6 +19,14 @@
 #define ANSI_BOLD_MAGENTA	"\033[1m\x1b[35m"
 #define ANSI_BOLD_CYAN		"\033[1m\x1b[36m"
 #define ANSI_BOLD_WHITE		"\033[1m\033[37m"
+
+#ifdef _WIN32
+#define clock_start()
+#define clock_end()
+#else
+
+#include <time.h>
+#include <sys/time.h>
 
 struct timeval __t0;
 clock_t __startClock;
@@ -47,3 +52,5 @@ void clock_end()
 	printf(ANSI_BOLD_MAGENTA "Time spent on GPU: %f\n" ANSI_RESET, realsec);
 	printf(ANSI_BOLD_GREEN "CPU utilization: %f\n" ANSI_RESET, cpusec);
 }
+
+#endif

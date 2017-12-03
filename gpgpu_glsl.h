@@ -12,11 +12,10 @@
 
 #ifdef _WIN32
 	#include <windows.h>
-	#include <GL/gl.h>
+	#include <GL/glew.h>
+	#include <GLFW/glfw3.h>
 #elif __APPLE__
 	#include <OpenGL/gl3.h>
-	//#include <OpenGL/glu.h>
-	//#include <OpenGL/glext.h>
 	#include <GLFW/glfw3.h>
 #elif __linux
 	#ifdef GPGPU_USE_GLFW
@@ -31,13 +30,13 @@
 		#include <GLES3/gl3ext.h>
 		//#define GL_CLAMP_TO_BORDER	GL_CLAMP_TO_BORDER_OES
 	#endif
+	#include <unistd.h>
 #endif
 
 #include <assert.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 
 
 //#ifndef _DEBUG_H_
@@ -86,7 +85,8 @@ void coPrintShaderInfo(GLuint shader, const char *str)
 	int logSize, length;
 	glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logSize);
 	if (logSize > 1) {
-		GLchar infoLog[logSize];
+		//GLchar infoLog[logSize];
+		GLchar infoLog[8192];
 		glGetShaderInfoLog(shader, logSize, &length, infoLog);
 		debug("Compile Error in %s\n%s\n", str, infoLog);
 	}
@@ -210,14 +210,6 @@ GLuint coBindOutputTexture(int N, int M, GLuint texture)
 	glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, /*level*/0);
 
-	/*GLuint renderbuffer;
-	glGenRenderbuffers(1, &renderbuffer);
-	glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
-	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, N, M);
-	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,  GL_RENDERBUFFER, renderbuffer);*/
-	//glBindRenderbuffer(GL_RENDERBUFFER, 0);
-	//glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
 		debug("glGetError: %d", glGetError());
 		debug("glCheckFramebufferStatus: %d", glCheckFramebufferStatus(GL_FRAMEBUFFER));
@@ -325,6 +317,10 @@ void coInit()
 		assert(!"glfwCreateWindow error!");
 	}
 	glfwMakeContextCurrent(window);
+
+#ifdef _WIN32
+	assert(glewInit() == GLEW_OK);
+#endif
 }
 
 void coTerm()
