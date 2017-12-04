@@ -4,7 +4,6 @@
 //		©2017 Yuichiro Nakada
 //---------------------------------------------------------
 
-#define GPGPU_USE_GLFW
 #ifndef GL_GLEXT_PROTOTYPES
 #define GL_GLEXT_PROTOTYPES
 #endif
@@ -18,17 +17,17 @@
 	#include <OpenGL/gl3.h>
 	#include <GLFW/glfw3.h>
 #elif __linux
-	#ifdef GPGPU_USE_GLFW
-		#include <GL/gl.h>
-		//#include <GL/glu.h>
-		//#include <GL/glext.h>
-		#include <GLFW/glfw3.h>
-	#else
+	#ifdef GPGPU_USE_GLES
 		#include <EGL/egl.h>
 		#include <EGL/eglext.h>
 		#include <GLES3/gl32.h>
 		#include <GLES3/gl3ext.h>
 		//#define GL_CLAMP_TO_BORDER	GL_CLAMP_TO_BORDER_OES
+	#else
+		#include <GL/gl.h>
+		//#include <GL/glu.h>
+		//#include <GL/glext.h>
+		#include <GLFW/glfw3.h>
 	#endif
 	#include <unistd.h>
 #endif
@@ -167,7 +166,7 @@ GLuint coCreateDataTexture(int w, int h, void *texels, GLuint type, int flag)
 	glGenTextures(1, &texture);
 	glBindTexture(GL_TEXTURE_2D, texture);
 
-#ifdef GPGPU_USE_GLFW
+#ifndef GPGPU_USE_GLES
 	glTexImage2D(GL_TEXTURE_2D, 0, (type==GL_FLOAT ? GL_RGBA32F : GL_RGBA), w, h, 0, GL_RGBA, type, texels);
 #else
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, type, texels);
@@ -286,7 +285,7 @@ float *coReadDataf(int N, int M, float *d)
 	glUniformMatrix3fv(l, 1, GL_FALSE, v);\
 }
 
-#ifdef GPGPU_USE_GLFW
+#ifndef GPGPU_USE_GLES
 #define coTransferData(texture, x, y, w, h, type, pix) {\
 	glBindTexture(GL_TEXTURE_2D, texture);\
 	glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, GL_RGBA, type, pix);\
@@ -302,7 +301,7 @@ float *coReadDataf(int N, int M, float *d)
 }
 #endif
 
-#ifdef GPGPU_USE_GLFW
+#ifndef GPGPU_USE_GLES
 void coInit()
 {
 	GLFWwindow* window;
@@ -336,7 +335,7 @@ EGLContext __core_ctx;
 
 void coInit()
 {
-	bool res;
+	/*bool*/int res;
 	int32_t __fd = open("/dev/dri/renderD128", O_RDWR);
 	assert(__fd > 0);
 
