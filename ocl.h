@@ -1,7 +1,7 @@
 //---------------------------------------------------------
 //	Cat's eye
 //
-//		©2016-2017 Yuichiro Nakada
+//		©2016-2018 Yuichiro Nakada
 //---------------------------------------------------------
 
 #ifdef __APPLE__
@@ -69,11 +69,17 @@ void oclSetup(int platform, int device)
 	printf("%s (platform %d, device %d)\n", str, platform, device);
 
 	context = clCreateContext(NULL, 1, &device_id[device], NULL, NULL, &ret);
+//#if ! defined(CL_VERSION_2_0)
 	command_queue = clCreateCommandQueue(context, device_id[device], 0, &ret);
+//#else
+	/*cl_queue_properties queueProps[] =
+		{ CL_QUEUE_PROPERTIES, (CL_QUEUE_ON_DEVICE && CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE), 0 };*/
+//	command_queue = clCreateCommandQueueWithProperties(context, device_id[device], /*queueProps*/0, &ret);
+//#endif
 
-	/*cl_ulong maxMemAlloc;
+	cl_ulong maxMemAlloc;
 	clGetDeviceInfo(device_id[device], CL_DEVICE_MAX_MEM_ALLOC_SIZE, sizeof(cl_ulong), &maxMemAlloc, NULL);
-	printf("Maximum memory allocation size is %llu bytes\n", maxMemAlloc);*/
+	printf("Maximum memory allocation size is %lu bytes\n", maxMemAlloc);
 }
 
 void oclKernel(ocl_t *kernel, int n, char *opt, char *kernel_code)
@@ -128,6 +134,7 @@ void oclKernelArgsWrite(args_t *args)
 		if (args->flag & OCL_WRITE) {
 			clEnqueueWriteBuffer(command_queue, *(cl_mem*)(args->p), CL_TRUE, 0, args->size, args->s, 0, 0, 0);
 			if (args->flag & OCL_WRITE_ONCE) args->flag ^= OCL_WRITE;
+//			printf("clEnqueueWriteBuffer size:%d %x\n", args->size, args->s);
 		}
 		args++;
 	}
@@ -138,6 +145,7 @@ void oclKernelArgsRead(args_t *args)
 	while (args->size) {
 		if (args->flag & OCL_READ) {
 			clEnqueueReadBuffer(command_queue, *(cl_mem*)(args->p), CL_TRUE, 0, args->size, args->s, 0, 0, 0);
+//			printf("clEnqueueReadBuffer size:%d %x\n", args->size, args->s);
 		}
 		args++;
 	}
