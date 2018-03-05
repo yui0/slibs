@@ -1,10 +1,12 @@
-# ©2017 YUICHIRO NAKADA
+# ©2017-2018 YUICHIRO NAKADA
 
 PROGRAM = $(patsubst %.c,%,$(wildcard *.c))
 
 CC = clang
 CFLAGS = -Os
 LDFLAGS = -lasound
+LDFLAGS += `pkg-config --libs --cflags OpenCL`
+LDFLAGS += `pkg-config --libs --cflags glesv2 egl gbm` -lglfw
 
 .PHONY: all
 all: depend $(PROGRAM)

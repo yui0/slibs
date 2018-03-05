@@ -21,12 +21,11 @@ kernel void vec_add(global float* x, global float* y, global float* z, int n)
 
 int n = 10;
 float x[10], y[10], z[10];
-cl_mem x_dev, y_dev, z_dev;
 args_t args[] = {
-	{ CL_MEM_READ_WRITE, sizeof(float)*10, &x_dev, x, OCL_READ|OCL_WRITE },
-	{ CL_MEM_READ_WRITE, sizeof(float)*10, &y_dev, y, OCL_READ|OCL_WRITE },
-	{ CL_MEM_READ_WRITE, sizeof(float)*10, &z_dev, z, OCL_READ|OCL_WRITE },
-	{ 0, sizeof(int), &n, 0, 0 },
+	{ CL_MEM_READ_WRITE, sizeof(float)*10, 0, x, OCL_READ|OCL_WRITE },
+	{ CL_MEM_READ_WRITE, sizeof(float)*10, 0, y, OCL_READ|OCL_WRITE },
+	{ CL_MEM_READ_WRITE, sizeof(float)*10, 0, z, OCL_READ|OCL_WRITE },
+	{ 0, sizeof(int), 0, &n, 0 },
 	{ 0, 0, 0, 0, 0 },
 };
 ocl_t kernel[] = {

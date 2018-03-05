@@ -1,6 +1,6 @@
-// ©2017 Yuichiro Nakada
-// clang -Os convolution.c -o convolution `pkg-config --libs --cflags OpenCL`
-// clang -Os convolution.c -o convolution -framework opencl
+// ©2017-2018 Yuichiro Nakada
+// clang -Os ocl_convolution.c -o ocl_convolution `pkg-config --libs --cflags OpenCL`
+// clang -Os ocl_convolution.c -o ocl_convolution -framework opencl
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,15 +35,12 @@ unsigned int mask[maskWidth][maskHeight] =
 	{1, 1, 1}, {1, 0, 1}, {1, 1, 1},
 };
 
-cl_mem inputSignalBuffer;
-cl_mem maskBuffer;
-cl_mem outputSignalBuffer;
 args_t args[] = {
-	{ CL_MEM_READ_ONLY, sizeof(unsigned int) * inputSignalHeight * inputSignalWidth, &inputSignalBuffer, inputSignal, OCL_WRITE },
-	{ CL_MEM_READ_ONLY, sizeof(unsigned int) * maskHeight * maskWidth, &maskBuffer, mask, OCL_WRITE },
-	{ CL_MEM_WRITE_ONLY, sizeof(unsigned int) * outputSignalHeight * outputSignalWidth, &outputSignalBuffer, outputSignal, OCL_READ },
-	{ 0, sizeof(unsigned int), &inputSignalWidth, 0, 0 },
-	{ 0, sizeof(unsigned int), &maskWidth, 0, 0 },
+	{ CL_MEM_READ_ONLY, sizeof(unsigned int) * inputSignalHeight * inputSignalWidth, 0, inputSignal, OCL_WRITE },
+	{ CL_MEM_READ_ONLY, sizeof(unsigned int) * maskHeight * maskWidth, 0, mask, OCL_WRITE },
+	{ CL_MEM_WRITE_ONLY, sizeof(unsigned int) * outputSignalHeight * outputSignalWidth, 0, outputSignal, OCL_READ },
+	{ 0, sizeof(unsigned int), 0, (void*)&inputSignalWidth, 0 },
+	{ 0, sizeof(unsigned int), 0, (void*)&maskWidth, 0 },
 	{ 0, 0, 0, 0, 0 },
 };
 ocl_t kernel[] = {
