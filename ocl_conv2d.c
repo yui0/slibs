@@ -40,8 +40,6 @@ kernel void conv2d(global float4 *X/*256*256*/, global float4 *W/*3*3*/, global 
 	float4 z = 0;
 	z.x += dot((float3)(p[0].x, p[1].x, p[2].x), a[0].xyz);	// out 1
 	z.x += dot((float3)(p[3].x, p[4].x, p[5].x), (float3)(a[0].w, a[1].x, a[1].y));
-//	z.x += dot((float4)(p[3].x, p[4].x, p[5].x, 0.0f), (float4)(a[0].w, a[1].x, a[1].y, 0.0f));
-//	z.x += p[4].x * a[1].x;
 	z.x += dot((float3)(p[6].x, p[7].x, p[8].x), (float3)(a[1].z, a[1].w, a[2].x));
 
 	z.y += dot((float3)(p[0].x, p[1].x, p[2].x), a[2].yzw);	// out 2
@@ -57,8 +55,6 @@ kernel void conv2d(global float4 *X/*256*256*/, global float4 *W/*3*3*/, global 
 	z.w += dot((float3)(p[6].x, p[7].x, p[8].x), a[8].yzw);
 
 	Z[gid] = z;
-//	Z[gid] = p[4].x;
-//	Z[gid] = p[4];
 }
 
 );
@@ -68,13 +64,6 @@ float y[4*3*3] = {
 /*	0, 1, 0,
 	1, -4, 1,
 	0, 1, 0,*/
-
-// ok
-// x, x, ok
-// x, x, ok
-/*	0, 0, 0,
-	0, 1, 0,
-	0, 0, 0,*/
 
 	0,    0.125, 0,
 	0.125, -0.5, 0.125,
@@ -97,9 +86,9 @@ float y[4*3*3] = {
 	0, 4/1., 0,*/
 };
 args_t args[] = {
-	{ CL_MEM_READ_WRITE, sizeof(float)*4*256*256, 0, x, OCL_READ|OCL_WRITE },
-	{ CL_MEM_READ_WRITE, sizeof(float)*4*3*3, 0, y, OCL_READ|OCL_WRITE },
-	{ CL_MEM_READ_WRITE, sizeof(float)*4*256*256, 0, z, OCL_READ|OCL_WRITE },
+	{ CL_MEM_READ_ONLY, sizeof(float)*4*256*256, 0, x, OCL_WRITE },
+	{ CL_MEM_READ_ONLY, sizeof(float)*4*3*3, 0, y, OCL_WRITE },
+	{ CL_MEM_WRITE_ONLY, sizeof(float)*4*256*256, 0, z, OCL_READ },
 	{ 0, 0, 0, 0, 0 },
 };
 ocl_t kernel[] = {
@@ -109,6 +98,11 @@ int ksz = sizeof(kernel)/sizeof(kernel[0]);
 
 int main(int argc, char* argv[])
 {
+	if (argc<2) {
+		printf("Usage: %s file\n\n", argv[0]);
+		return 0;
+	}
+
 	int w, h, bpp;
 	uint8_t *pixels = stbi_load(argv[1], &w, &h, &bpp, 3);
 	for (int i=0; i<256; i++) {
