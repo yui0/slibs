@@ -23,7 +23,6 @@
 typedef struct {
 	int type;
 	int size;
-//	void *p;	// device memory
 	cl_mem p;	// device memory
 	void *s;	// cpu memory
 	int flag;
@@ -118,10 +117,6 @@ void oclKernelArgs(ocl_t *kernel, int n)
 		args_t *args = kernel->a;
 		while (args->size) {
 			if (args->type>0) {
-//				cl_mem *p = args->p;
-//				if (!p) { printf("oclKernelArgs error!!\n"); }
-//				if (!*p) *p = clCreateBuffer(context, args->type, args->size, NULL, &ret);
-//				if (!*p) printf("clCreateBuffer error!!\n");
 				if (!args->p) args->p = clCreateBuffer(context, args->type, args->size, NULL, &ret);
 				if (!args->p) printf("clCreateBuffer error!!\n");
 			}
@@ -135,7 +130,6 @@ void oclKernelArgsWrite(args_t *args)
 {
 	while (args->size) {
 		if (args->flag & OCL_WRITE) {
-//			clEnqueueWriteBuffer(command_queue, *(cl_mem*)(args->p), CL_TRUE, 0, args->size, args->s, 0, 0, 0);
 			clEnqueueWriteBuffer(command_queue, args->p, CL_TRUE, 0, args->size, args->s, 0, 0, 0);
 			if (args->flag & OCL_WRITE_ONCE) args->flag ^= OCL_WRITE;
 //			printf("clEnqueueWriteBuffer size:%d %x\n", args->size, args->s);
@@ -148,7 +142,6 @@ void oclKernelArgsRead(args_t *args)
 {
 	while (args->size) {
 		if (args->flag & OCL_READ) {
-//			clEnqueueReadBuffer(command_queue, *(cl_mem*)(args->p), CL_TRUE, 0, args->size, args->s, 0, 0, 0);
 			clEnqueueReadBuffer(command_queue, args->p, CL_TRUE, 0, args->size, args->s, 0, 0, 0);
 //			printf("clEnqueueReadBuffer size:%d %x\n", args->size, args->s);
 		}
@@ -162,8 +155,6 @@ void oclRun(ocl_t *kernel)
 	args_t *args = kernel->a;
 	while (args->size) {
 		//printf("%x %d %d %x\n",kernel->k, n++, sizeof(cl_mem), (void*)args->p);
-//		if (args->type>0) clSetKernelArg(kernel->k, n++, sizeof(cl_mem), (void*)args->p);
-//		else clSetKernelArg(kernel->k, n++, args->size, (void*)args->p);
 		if (args->type>0) clSetKernelArg(kernel->k, n++, sizeof(cl_mem), (void*)&args->p);
 		else clSetKernelArg(kernel->k, n++, args->size, (void*)args->s);
 		args++;
@@ -181,8 +172,6 @@ void oclReleaseKernel(ocl_t *kernel, int n)
 		args_t *args = kernel->a;
 		while (args->size) {
 			if (args->type>0 && args->p) {
-//				clReleaseMemObject(*(cl_mem*)(args->p));
-//				*(cl_mem*)args->p = 0;
 				clReleaseMemObject(args->p);
 				args->p = 0;
 			}
