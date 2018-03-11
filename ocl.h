@@ -4,6 +4,7 @@
 //		©2016-2018 Yuichiro Nakada
 //---------------------------------------------------------
 
+#include <stdio.h>
 #ifdef __APPLE__
 #include <OpenCL/opencl.h>
 #else
