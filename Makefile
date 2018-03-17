@@ -5,7 +5,7 @@ PROGRAM = $(patsubst %.c,%,$(wildcard *.c))
 CC = clang
 CFLAGS = -Os
 LDFLAGS = -lasound
-LDFLAGS += `pkg-config --libs --cflags OpenCL`
+LDFLAGS += `pkg-config --libs --cflags OpenCL` -lm
 LDFLAGS += `pkg-config --libs --cflags glesv2 egl gbm` -lglfw
 
 .PHONY: all

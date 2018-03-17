@@ -44,7 +44,7 @@ args_t args[] = {
 	{ 0, 0, 0, 0, 0 },
 };
 ocl_t kernel[] = {
-	{ "convolve", 0, {outputSignalWidth * outputSignalHeight,0,0,},{1,0,0,}, args },
+	{ "convolve", 0, 1,{outputSignalWidth * outputSignalHeight,0,0,},{1,0,0,}, args },
 };
 int ksz = sizeof(kernel)/sizeof(kernel[0]);
 

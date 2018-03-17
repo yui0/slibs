@@ -29,7 +29,7 @@ args_t args[] = {
 	{ 0, 0, 0, 0, 0 },
 };
 ocl_t kernel[] = {
-	{ "vec_add", 0, {10,0,0,},{10,0,0,}, args },
+	{ "vec_add", 0, 1,{10,0,0,},{10,0,0,}, args },
 };
 int ksz = sizeof(kernel)/sizeof(kernel[0]);
 

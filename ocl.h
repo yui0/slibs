@@ -5,6 +5,9 @@
 //---------------------------------------------------------
 
 #include <stdio.h>
+
+#define CL_USE_DEPRECATED_OPENCL_1_2_APIS
+
 #ifdef __APPLE__
 #include <OpenCL/opencl.h>
 #else
@@ -32,6 +35,7 @@ typedef struct {
 typedef struct {
 	char *f;
 	cl_kernel k;
+	int dim;
 	size_t global_size[3];
 	size_t local_size[3];
 	args_t *a;
@@ -77,6 +81,10 @@ void oclSetup(int platform, int device)
 		{ CL_QUEUE_PROPERTIES, (CL_QUEUE_ON_DEVICE && CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE), 0 };*/
 //	command_queue = clCreateCommandQueueWithProperties(context, device_id[device], /*queueProps*/0, &ret);
 //#endif
+
+	size_t max_work_group_size;
+	clGetDeviceInfo(device_id[device], CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(max_work_group_size), &max_work_group_size, NULL);
+	printf("CL_DEVICE_MAX_WORK_GROUP_SIZE: %lu\n", max_work_group_size);
 
 	cl_ulong maxMemAlloc;
 	clGetDeviceInfo(device_id[device], CL_DEVICE_MAX_MEM_ALLOC_SIZE, sizeof(cl_ulong), &maxMemAlloc, NULL);
@@ -162,7 +170,9 @@ void oclRun(ocl_t *kernel)
 	}
 
 	size_t *local = kernel->local_size[0] ? kernel->local_size : 0;
-	clEnqueueNDRangeKernel(command_queue, kernel->k, 1, NULL, kernel->global_size, local, 0, NULL, NULL);
+	clEnqueueNDRangeKernel(command_queue, kernel->k, kernel->dim, NULL, kernel->global_size, local, 0, NULL, NULL);
+	//printf("clEnqueueNDRangeKernel %zu,%zu\n", kernel->local_size[0], kernel->local_size[1]);
+	printf("clEnqueueNDRangeKernel %zu,%zu,%zu\n", kernel->global_size[0], kernel->global_size[1], kernel->global_size[2]);
 	//cl_event e;
 	//clEnqueueNDRangeKernel(command_queue, kernel->k, 1, NULL, kernel->global_size, local, 0, NULL, &e);
 }

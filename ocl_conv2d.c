@@ -93,7 +93,7 @@ args_t args[] = {
 	{ 0, 0, 0, 0, 0 },
 };
 ocl_t kernel[] = {
-	{ "conv2d", 0, {256*256,0,0,},{0,0,0,}, args },
+	{ "conv2d", 0, 1,{256*256,0,0,},{0,0,0,}, args },
 };
 int ksz = sizeof(kernel)/sizeof(kernel[0]);
 
