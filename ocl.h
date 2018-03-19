@@ -24,6 +24,18 @@
 #define OCL_WRITE	2
 #define OCL_WRITE_ONCE	4
 
+#ifdef DEBUG
+#define checkOcl(err) __checkOclErrors((err), #err, __FILE__, __LINE__)
+static void __checkOclErrors(const cl_int err, const char* const func, const char* const file, const int line)
+{
+	if (err != CL_SUCCESS) {
+		fprintf(stderr, "OpenCL error at %s:%d code=%d \"%s\" \n", file, line, err, func);
+	}
+}
+#else
+#define checkOcl(x) x
+#endif
+
 typedef struct {
 	int type;
 	int size;
@@ -82,9 +94,14 @@ void oclSetup(int platform, int device)
 //	command_queue = clCreateCommandQueueWithProperties(context, device_id[device], /*queueProps*/0, &ret);
 //#endif
 
+#ifdef DEBUG
 	size_t max_work_group_size;
 	clGetDeviceInfo(device_id[device], CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(max_work_group_size), &max_work_group_size, NULL);
 	printf("CL_DEVICE_MAX_WORK_GROUP_SIZE: %lu\n", max_work_group_size);
+	size_t max_work_item_sizes[3];
+	clGetDeviceInfo(device_id[device], CL_DEVICE_MAX_WORK_ITEM_SIZES, sizeof(size_t)*3, max_work_item_sizes, NULL);
+	printf("CL_DEVICE_MAX_WORK_ITEM_SIZES: "); for (size_t i=0; i<3; ++i) printf("%lu ", max_work_item_sizes[i]); printf("\n");
+#endif
 
 	cl_ulong maxMemAlloc;
 	clGetDeviceInfo(device_id[device], CL_DEVICE_MAX_MEM_ALLOC_SIZE, sizeof(cl_ulong), &maxMemAlloc, NULL);
@@ -170,11 +187,11 @@ void oclRun(ocl_t *kernel)
 	}
 
 	size_t *local = kernel->local_size[0] ? kernel->local_size : 0;
-	clEnqueueNDRangeKernel(command_queue, kernel->k, kernel->dim, NULL, kernel->global_size, local, 0, NULL, NULL);
+	checkOcl(clEnqueueNDRangeKernel(command_queue, kernel->k, kernel->dim, NULL, kernel->global_size, local, 0, NULL, NULL));
+#ifdef DEBUG
 	//printf("clEnqueueNDRangeKernel %zu,%zu\n", kernel->local_size[0], kernel->local_size[1]);
 	printf("clEnqueueNDRangeKernel %zu,%zu,%zu\n", kernel->global_size[0], kernel->global_size[1], kernel->global_size[2]);
-	//cl_event e;
-	//clEnqueueNDRangeKernel(command_queue, kernel->k, 1, NULL, kernel->global_size, local, 0, NULL, &e);
+#endif
 }
 
 void oclReleaseKernel(ocl_t *kernel, int n)
