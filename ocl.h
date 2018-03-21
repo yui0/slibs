@@ -189,8 +189,7 @@ void oclRun(ocl_t *kernel)
 	size_t *local = kernel->local_size[0] ? kernel->local_size : 0;
 	checkOcl(clEnqueueNDRangeKernel(command_queue, kernel->k, kernel->dim, NULL, kernel->global_size, local, 0, NULL, NULL));
 #ifdef DEBUG
-	//printf("clEnqueueNDRangeKernel %zu,%zu\n", kernel->local_size[0], kernel->local_size[1]);
-	printf("clEnqueueNDRangeKernel %zu,%zu,%zu\n", kernel->global_size[0], kernel->global_size[1], kernel->global_size[2]);
+	printf("clEnqueueNDRangeKernel (%zu/%zu,%zu/%zu,%zu/%zu)\n", kernel->local_size[0], kernel->global_size[0], kernel->local_size[1], kernel->global_size[1], kernel->local_size[2], kernel->global_size[2]);
 #endif
 }
 
