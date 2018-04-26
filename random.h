@@ -3,6 +3,7 @@
  * */
 
 #ifndef RANDOM_H
+#define RANDOM_H
 
 #define XOR128_MAX	18446744073709551615.0
 
