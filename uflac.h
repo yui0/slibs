@@ -2801,7 +2801,7 @@ flake_encode_close(FlakeContext *s)
 
 
 
-int flac_encode(char *name, void *data, int len, int sampleRate, int sampleDepth, int channels, int compr)
+int uflac_encode(char *name, void *data, int len, int sampleRate, int sampleDepth, int channels, int compr)
 {
 	FILE *fp = fopen(name, "wb");
 	if (!fp) return 1;
@@ -2826,7 +2826,7 @@ int flac_encode(char *name, void *data, int len, int sampleRate, int sampleDepth
 
 	uint8_t frame[s.max_frame_size];
 	uint8_t *pcm = data;
-	for (int n=len; n>0; n-=s.params.block_size) {
+	for (int n=len; n>-s.params.block_size; n-=s.params.block_size) {
 		int fs = flake_encode_frame(&s, frame, (short*)pcm);
 		pcm += s.params.block_size * channels * sampleDepth/8;
 		if (fs < 0) {

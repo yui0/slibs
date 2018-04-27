@@ -5,7 +5,7 @@ Single file libraries for C/C++.
 |library | category | LoC | license | description
 | --------------------- | -------- | --- | --- | --------------------------------
 |**alsa.h** | audio | 138 | public domain | ALSA [ref: https://github.com/yui0/aplay-]
-|**flac.h** | audio | 2843 | LGPL-2.1 | FLAC audio encoder based on Flake
+|**uflac.h** | audio | 2843 | LGPL-2.1 | FLAC audio encoder based on Flake
 |**wav.h** | audio | 61 | public domain | Wave format [ref: https://github.com/yui0/aplay-]
 |**wave.h** | audio | 304 | public domain | utility for wave format
 |**v4l2.h** | video | 614 | public domain | video for linux
