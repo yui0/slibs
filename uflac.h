@@ -2,7 +2,7 @@
  *	©2018 Yuichiro Nakada
  *
  * Basic usage:
- *	flac_encode("music.flac", pcm, len, 44100, 16, 2, 9);
+ *	uflac_encode("music.flac", pcm, len, 44100, 16, 2, 9);
  *
  * */
 

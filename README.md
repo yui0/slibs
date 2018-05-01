@@ -13,7 +13,7 @@ Single file libraries for C/C++.
 |**kbhit.h** | utils | 64 | public domain | kbhit function for linux [ref: https://github.com/yui0/aplay-]
 |**ls.h** | utils | 155 | public domain | making list of files and directories [ref: https://github.com/yui0/aplay-]
 |**random.h** | math | 33 | public domain | XOR128 random function
-|**gpgpu_glsl.h** | GPGPU | 383 | public domain | GLSL frameworks [ref: https://github.com/yui0/waifu2x-glsl]
+|**gpgpu_glsl.h** | GPGPU | 399 | public domain | GLSL frameworks [ref: https://github.com/yui0/waifu2x-glsl]
 |**ocl.h** | GPGPU | 190 | public domain | OpenCL frameworks
 |**jo_mpeg.h** | video | 317 | public domain | MPEG1/2 encoder [http://www.jonolick.com/home/mpeg-video-writer]
 |**minimp3.h** | audio | 2671 | LGPL | MP3 decoder [http://www.murga-linux.com/puppy/viewtopic.php?t=59417]

@@ -104,6 +104,9 @@ GLuint coLoadShader(GLenum shaderType, const char* pSource)
 
 GLuint coCreateProgram(const char* pFragmentSource)
 {
+#ifdef _WIN32
+	if (!glCreateProgram) printf("glCreateProgram is NULL!! (OpenGL ver:%s)\n", glGetString(GL_VERSION));
+#endif
 	if (!__vertexShader) __vertexShader = coLoadShader(GL_VERTEX_SHADER, pass_through);
 	GLuint pixelShader = coLoadShader(GL_FRAGMENT_SHADER, pFragmentSource);
 	GLuint program = glCreateProgram();
@@ -305,7 +308,13 @@ float *coReadDataf(int N, int M, float *d)
 void coInit()
 {
 	GLFWwindow* window;
-	assert(glfwInit() != 0);
+	if (!glfwInit()) {
+		printf("Can't initialize GLFW.\n");
+	}
+/*#ifdef _WIN32
+	glfwWindowHint(GLFW_VERSION_MAJOR, 3);
+	glfwWindowHint(GLFW_VERSION_MINOR, 0);
+#endif*/
 //	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 //	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 //	glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
@@ -318,7 +327,10 @@ void coInit()
 	glfwMakeContextCurrent(window);
 
 #ifdef _WIN32
-	assert(glewInit() == GLEW_OK);
+#pragma comment(lib, "glew32.lib")
+	if (glewInit() != GLEW_OK) {
+		printf("error at glewInit!! (%s)\n", glewGetErrorString(r));
+	}
 #endif
 }
 
