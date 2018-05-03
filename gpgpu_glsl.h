@@ -63,18 +63,18 @@
 char pass_through[] = STRINGIFY(
 
 #ifdef GL_ES
-precision highp float;
+\nprecision highp float;\n
 #endif
-
-attribute vec3 pos;
-attribute vec2 tex;
-varying vec2   uv;
-
-void main(void)
-{
-	gl_Position = vec4(pos, 1.0);
-	uv = tex;
-}
+\n\n
+attribute vec3 pos;\n
+attribute vec2 tex;\n
+varying vec2   uv;\n
+\n
+void main(void)\n
+{\n
+	gl_Position = vec4(pos, 1.0);\n
+	uv = tex;\n
+}\n
 
 );
 GLuint __vertexShader;
@@ -307,19 +307,21 @@ float *coReadDataf(int N, int M, float *d)
 #ifndef GPGPU_USE_GLES
 void coInit()
 {
-	GLFWwindow* window;
 	if (!glfwInit()) {
 		printf("Can't initialize GLFW.\n");
 	}
-/*#ifdef _WIN32
-	glfwWindowHint(GLFW_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_VERSION_MINOR, 0);
-#endif*/
-//	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-//	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+#ifdef _WIN32
+//#include <GL/glut.h>
+/*	int argc = 1;
+	char argv[2][256] = {0};
+	glutInit(&argc, argv);
+	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
+	glutInitWindowSize(320, 240);
+	glutCreateWindow(argv[0]);*/
+#endif
 //	glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
 	glfwWindowHint(GLFW_VISIBLE, 0);
-	window = glfwCreateWindow(320, 240, "Catgl", 0, 0);
+	GLFWwindow *window = glfwCreateWindow(320, 240, "Catgl", 0, 0);
 	if (!window) {
 		glfwTerminate();
 		assert(!"glfwCreateWindow error!");
@@ -327,15 +329,20 @@ void coInit()
 	glfwMakeContextCurrent(window);
 
 #ifdef _WIN32
+//#include <glad/glad.h>
+//	if (!gladLoadGL()) { exit(-1); }
 #pragma comment(lib, "glew32.lib")
-	if (glewInit() != GLEW_OK) {
+	int r = glewInit();
+	if (r != GLEW_OK) {
 		printf("error at glewInit!! (%s)\n", glewGetErrorString(r));
 	}
+	printf("%s: OpenGL %s\n", glGetString(GL_RENDERER), glGetString(GL_VERSION));
 #endif
 }
 
 void coTerm()
 {
+	glfwTerminate();
 }
 
 #else
