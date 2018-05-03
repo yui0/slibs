@@ -63,17 +63,17 @@
 char pass_through[] = STRINGIFY(
 
 #ifdef GL_ES
-\nprecision highp float;\n
+precision highp float;
 #endif
-\n\n
-attribute vec3 pos;\n
-attribute vec2 tex;\n
-varying vec2   uv;\n
-\n
-void main(void)\n
-{\n
-	gl_Position = vec4(pos, 1.0);\n
-	uv = tex;\n
+
+attribute vec3 pos;
+attribute vec2 tex;
+varying vec2   uv;
+
+void main(void)
+{
+	gl_Position = vec4(pos, 1.0);
+	uv = tex;
 }\n
 
 );
@@ -93,12 +93,24 @@ void coPrintShaderInfo(GLuint shader, const char *str)
 
 GLuint coLoadShader(GLenum shaderType, const char* pSource)
 {
+	char *src = strdup(pSource);
+	char *p = src;
+	while (*p) {
+		switch (*p++) {
+		case '{':
+		case ';':
+			if (*p==0x20) *p = '\n';
+		}
+	}
+
 	GLuint shader = glCreateShader(shaderType);
-	glShaderSource(shader, 1, &pSource, 0);
+	glShaderSource(shader, 1, (const char**)&src, 0);
 	glCompileShader(shader);
 	GLint compiled;
 	glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
-	if (!compiled) coPrintShaderInfo(shader, pSource);
+	if (!compiled) coPrintShaderInfo(shader, src);
+
+	free(src);
 	return shader;
 }
 
