@@ -1,7 +1,7 @@
 //---------------------------------------------------------
 //	Cat's eye
 //
-//		©2017 Yuichiro Nakada
+//		©2017-2018 Yuichiro Nakada
 //---------------------------------------------------------
 
 #ifndef GL_GLEXT_PROTOTYPES
@@ -25,8 +25,6 @@
 		//#define GL_CLAMP_TO_BORDER	GL_CLAMP_TO_BORDER_OES
 	#else
 		#include <GL/gl.h>
-		//#include <GL/glu.h>
-		//#include <GL/glext.h>
 		#include <GLFW/glfw3.h>
 	#endif
 	#include <unistd.h>
@@ -348,8 +346,8 @@ void coInit()
 	if (r != GLEW_OK) {
 		printf("error at glewInit!! (%s)\n", glewGetErrorString(r));
 	}
-	printf("%s: OpenGL %s\n", glGetString(GL_RENDERER), glGetString(GL_VERSION));
 #endif
+	printf("%s: OpenGL %s\n", glGetString(GL_RENDERER), glGetString(GL_VERSION));
 }
 
 void coTerm()
