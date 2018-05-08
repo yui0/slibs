@@ -2,6 +2,7 @@
 // clang -Os mp4parser.c -o mp4parser -lm
 
 #include <stdio.h>
+//#define NDEBUG
 #include "mp4parser.h"
 
 int main(int argc, char* argv[])

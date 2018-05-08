@@ -1,3 +1,10 @@
+/* LGPL Simple, Minimalistic, mp3 decoder based on minimp3
+ *	©2017-2018 Yuichiro Nakada
+ *
+ * Basic usage:
+ *
+ * */
+
 /*
  * MPEG Audio Layer III decoder
  * Copyright (c) 2001, 2002 Fabrice Bellard,
@@ -2802,3 +2809,6 @@ int mp3_decode(mp3_decoder_t *dec, void *buf, int bytes, signed short *out, mp3_
 	}
 	return s->frame_size;
 }
+
+#undef UPDATE_CACHE
+#undef BF
