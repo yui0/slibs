@@ -13322,7 +13322,7 @@ printf("type:%x/%x\n",type, ATOM_soun);
 	uint32_t lastChunk = uaac_read32(stco + 8 + 0x04 + nChunks * 4, fd);
 
 	if (nChunks == 1) {
-		_ATOM mdat =  uaac_findMp4Atom("mdat", 0, 1, fd);
+		_ATOM mdat = uaac_findMp4Atom("mdat", 0, 1, fd);
 		lastChunk = mdat.size;
 	}
 #if 0
@@ -13425,9 +13425,11 @@ uint8_t *uaac_extract_aac(int fd, int *len, int *samplerate, int *channels)
 //		printf(" %d", c);
 	}
 //	printf("samplesPerChunk:%d dataSize:%d\n", samplesPerChunk, c);
+	if (uaac_findMp4Atom("mdat", 0, 1, fd).size < c) return 0; // size is not ok
 
 	*len = c;
 	uint8_t *data = (uint8_t*)malloc(c);
+	if (!data) return 0; // memory error!
 	uint8_t *p = data;
 	for (int i=0; i<nChunks-1; i++) {
 		lseek(fd, pos[i], SEEK_SET);
