@@ -124,7 +124,7 @@ LS_LIST *ls_dir(char *dir, int flag, int *num)
 #endif
 		for (int i=0; i<n; i++) {
 #ifdef RANDOM_H
-			int a = xor128()%n;
+			int a = frand() * n;
 #else
 			int a = rand()%n;
 #endif
