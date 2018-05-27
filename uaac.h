@@ -13253,15 +13253,15 @@ _ATOM uaac_findMp4Atom(const char *atom, const uint32_t pos, const int loop, int
 {
 	int r;
 	_ATOM ret;
-	_ATOMINFO atomInfo;
+	_ATOMINFO info;
 
 	ret.pos = pos;
 	do {
 		r = lseek(fd, ret.pos, SEEK_SET);
-		read(fd, &atomInfo, sizeof(atomInfo));
-		ret.size = REV32(atomInfo.size);
-		if (!strncmp(atom, atomInfo.name, 4)) return ret;
-		if (!ret.size) break;
+		read(fd, &info, sizeof(info));
+		ret.size = REV32(info.size);
+		if (!strncmp(atom, info.name, 4)) return ret;
+		if (ret.size<=8) break;
 		ret.pos += ret.size;
 	} while (loop && r>=0);
 
