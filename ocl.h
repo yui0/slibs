@@ -24,7 +24,7 @@
 #define OCL_WRITE	2
 #define OCL_WRITE_ONCE	4
 
-#ifdef DEBUG
+#ifdef _DEBUG
 #define checkOcl(err) __checkOclErrors((err), #err, __FILE__, __LINE__)
 static void __checkOclErrors(const cl_int err, const char* const func, const char* const file, const int line)
 {
@@ -107,13 +107,16 @@ void oclSetup(int platform, int device)
 //	command_queue = clCreateCommandQueueWithProperties(context, device_id[device], /*queueProps*/0, &ret);
 //#endif
 
-#ifdef DEBUG
+#ifdef _DEBUG
 	size_t max_work_group_size;
 	clGetDeviceInfo(device_id[device], CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(max_work_group_size), &max_work_group_size, NULL);
 	printf("CL_DEVICE_MAX_WORK_GROUP_SIZE: %lu\n", max_work_group_size);
 	size_t max_work_item_sizes[3];
 	clGetDeviceInfo(device_id[device], CL_DEVICE_MAX_WORK_ITEM_SIZES, sizeof(size_t)*3, max_work_item_sizes, NULL);
 	printf("CL_DEVICE_MAX_WORK_ITEM_SIZES: "); for (size_t i=0; i<3; ++i) printf("%lu ", max_work_item_sizes[i]); printf("\n");
+/*	size_t _size;
+	clGetDeviceInfo(device_id[device], CL_DEVICE_MAX_CONSTANT_ARGS, sizeof(_size), &_size, NULL);
+	printf("CL_DEVICE_MAX_CONSTANT_ARGS: %lu\n", _size);*/
 #endif
 
 	cl_ulong maxMemAlloc;
@@ -193,15 +196,17 @@ void oclRun(ocl_t *kernel)
 	int n = 0;
 	args_t *args = kernel->a;
 	while (args->size) {
-		//printf("%x %d %d %x\n",kernel->k, n++, sizeof(cl_mem), (void*)args->p);
-		if (args->type>0) clSetKernelArg(kernel->k, n++, sizeof(cl_mem), (void*)&args->p);
-		else clSetKernelArg(kernel->k, n++, args->size, (void*)args->s);
+#ifdef _DEBUG
+		printf("clSetKernelArg: %x %d %d %x %x\n",kernel->k, n, sizeof(cl_mem), (void*)args->p, (void*)args->s);
+#endif
+		if (args->type>0) checkOcl(clSetKernelArg(kernel->k, n++, sizeof(cl_mem), (void*)&args->p));
+		else checkOcl(clSetKernelArg(kernel->k, n++, args->size, (void*)args->s));
 		args++;
 	}
 
 	size_t *local = kernel->local_size[0] ? kernel->local_size : 0;
 	checkOcl(clEnqueueNDRangeKernel(command_queue, kernel->k, kernel->dim, NULL, kernel->global_size, local, 0, NULL, NULL));
-#ifdef DEBUG
+#ifdef _DEBUG
 	printf("clEnqueueNDRangeKernel (%zu/%zu,%zu/%zu,%zu/%zu)\n", kernel->local_size[0], kernel->global_size[0], kernel->local_size[1], kernel->global_size[1], kernel->local_size[2], kernel->global_size[2]);
 #endif
 }
