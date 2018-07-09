@@ -160,7 +160,7 @@ void oclKernelArgs(ocl_t *kernel, int n)
 		while (args->size) {
 			if (args->type>0) {
 				if (!args->p) args->p = clCreateBuffer(context, args->type, args->size, NULL, &ret);
-				if (!args->p) printf("clCreateBuffer error!!\n");
+				if (!args->p) printf("clCreateBuffer error!! %d\n", ret);
 			}
 			args++;
 		}
@@ -197,7 +197,7 @@ void oclRun(ocl_t *kernel)
 	args_t *args = kernel->a;
 	while (args->size) {
 #ifdef _DEBUG
-		printf("clSetKernelArg: %x %d %d %x %x\n",kernel->k, n, sizeof(cl_mem), (void*)args->p, (void*)args->s);
+		printf("clSetKernelArg:[%d] %d (%x/%d) %x\n", n, sizeof(cl_mem), (void*)args->p, args->size, (void*)args->s);
 #endif
 		if (args->type>0) checkOcl(clSetKernelArg(kernel->k, n++, sizeof(cl_mem), (void*)&args->p));
 		else checkOcl(clSetKernelArg(kernel->k, n++, args->size, (void*)args->s));
