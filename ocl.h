@@ -58,6 +58,19 @@ cl_device_id device_id[MAX_DEVICES];
 cl_context context;
 cl_command_queue command_queue;
 
+#ifdef _WIN32
+char *_getenv(char *environment_name)
+{
+	size_t buf;
+	static char buffer[1024];
+	if (getenv_s(&buf, buffer, 1024, environment_name)) return 0;
+	if (buf == 0) return 0;
+	return buffer;
+}
+#else
+#define _getenv	getenv
+#endif
+
 void oclSetup(int platform, int device)
 {
 	cl_platform_id platform_id[MAX_PLATFORMS];
@@ -68,11 +81,11 @@ void oclSetup(int platform, int device)
 	ocl_device = device;
 
 	int type = CL_DEVICE_TYPE_ALL;
-	if (getenv("FORCE_GPU")) {
+	if (_getenv("FORCE_GPU")) {
 		type = CL_DEVICE_TYPE_GPU;
-	} else if (getenv("FORCE_CPU")) {
+	} else if (_getenv("FORCE_CPU")) {
 		type = CL_DEVICE_TYPE_CPU;
-	} else if (getenv("FORCE_ACCELERATOR")) {
+	} else if (_getenv("FORCE_ACCELERATOR")) {
 		type = CL_DEVICE_TYPE_ACCELERATOR;
 	}
 
