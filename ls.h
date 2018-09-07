@@ -1,11 +1,13 @@
 /* public domain Simple, Minimalistic, making list of files and directories
- *	©2017 Yuichiro Nakada
+ *	©2017-2018 Yuichiro Nakada
  *
  * Basic usage:
  *	int num;
  *	LS_LIST *ls = ls_dir("dir/", LS_RECURSIVE|LS_RANDOM, &num);
  * */
 
+#include <time.h>
+#include <unistd.h>
 #include <dirent.h>
 #include <sys/stat.h>
 
