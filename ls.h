@@ -42,6 +42,7 @@ int ls_count_dir(char *dir, int flag)
 				char path[PATH_MAX];
 				sprintf(path, "%s/%s", dir, entry->d_name);
 				i += ls_count_dir(path, flag);
+				continue; // dir (no count)
 			}
 		}
 
@@ -78,7 +79,7 @@ int ls_seek_dir(char *dir, LS_LIST *ls, int flag)
 		strcpy((ls+i)->d_name, buf);
 
 		stat(entry->d_name, &statbuf);
-		if (S_ISDIR(statbuf.st_mode)) {
+		if (S_ISDIR(statbuf.st_mode)) { // dir (no count)
 			(ls+i)->status = 1;
 
 			//if (flag & LS_RECURSIVE) i += ls_seek_dir(buf, ls+i+1, flag);
@@ -87,7 +88,6 @@ int ls_seek_dir(char *dir, LS_LIST *ls, int flag)
 			(ls+i)->status = 0;
 			i++;
 		}
-		//i++;
 	}
 
 	closedir(dp);
