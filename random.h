@@ -28,6 +28,6 @@ uint64_t xor128()
 	return ( xor128_seed[1] = ( s1 ^ s0 ^ ( s1 >> 17 ) ^ ( s0 >> 26 ) ) ) + s0;
 }
 
-#define frand()		( xor128() / ((double)XOR128_MAX + 1.0f) )
+#define frand()		( xor128() * (1.0 / (XOR128_MAX + 1.0f)) )
 
 #endif
