@@ -28,7 +28,8 @@ uint64_t xor128()
 	return ( xor128_seed[1] = ( s1 ^ s0 ^ ( s1 >> 17 ) ^ ( s0 >> 26 ) ) ) + s0;
 }
 
-#define frand()			( xor128() * (1.0 / (XOR128_MAX +1.0)) )
-#define random(min, max)	( xor128() * (1.0 / (XOR128_MAX +1.0)) * (max -min) +min )
+#define frand()			( xor128() / (XOR128_MAX +1.0) )
+//#define rand(max)		(int)( xor128() / (XOR128_MAX +1.0) * max)
+#define random(min, max)	( xor128() / (XOR128_MAX +1.0) * (max -min) +min )
 
 #endif
