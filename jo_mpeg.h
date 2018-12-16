@@ -301,7 +301,8 @@ int encode_mpeg(unsigned char *mem, const unsigned char *rgbx, int width, int he
 	}
 	jo_writeBits(&bits, 0, 7);
 	put4b("\x00\x00\x01\xb7", &mem); // End of Sequence
-	return mem-smem;
+	// size is very small, safe to cast to `int`
+	return (int)(mem-smem);
 }
 
 #include <stdlib.h>
