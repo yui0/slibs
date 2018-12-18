@@ -67,7 +67,7 @@ inline void put1b(unsigned char c, unsigned char **p)
 	**p = c;
 	(*p)++;
 }
-inline void put4b(char *c, unsigned char **p)
+inline void put4b(const char *c, unsigned char **p)
 {
 //	uint4_t m = *((uint4_t*)c);
 //	*((uint4_t*)*p) = m;
@@ -82,7 +82,7 @@ inline void put4b(char *c, unsigned char **p)
 	**p = *c++;
 	(*p)++;
 }
-inline void put8b(char *c, unsigned char **p)
+inline void put8b(const char *c, unsigned char **p)
 {
 //	uint8_t m = *((uint8_t*)c);
 //	*((uint8_t*)*p) = m;
