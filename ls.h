@@ -15,7 +15,7 @@
 #define LS_RANDOM	2
 
 typedef struct {
-	int status;
+	int count, dir;
 	char d_name[PATH_MAX];
 } LS_LIST;
 
@@ -27,6 +27,7 @@ int ls_count_dir(char *dir, int flag)
 
 	if (!(dp = opendir(dir))) {
 		perror("opendir");
+		printf("%s\n", dir);
 		return 0;
 	}
 	char *cpath = getcwd(0, 0);
@@ -48,6 +49,7 @@ int ls_count_dir(char *dir, int flag)
 
 		i++;
 	}
+	//printf("%s => %d\n", dir, i);
 
 	closedir(dp);
 	chdir(cpath);
@@ -56,7 +58,7 @@ int ls_count_dir(char *dir, int flag)
 	return i;
 }
 	
-int ls_seek_dir(char *dir, LS_LIST *ls, int flag)
+int ls_seek_dir(char *dir, LS_LIST *ls, int flag, int n)
 {
 	DIR *dp;
 	struct dirent *entry;
@@ -80,13 +82,15 @@ int ls_seek_dir(char *dir, LS_LIST *ls, int flag)
 
 		stat(entry->d_name, &statbuf);
 		if (S_ISDIR(statbuf.st_mode)) { // dir (no count)
-			(ls+i)->status = 1;
+			(ls+i)->count = 0; // dir
+			(ls+i)->dir = ++n;
 
 			//if (flag & LS_RECURSIVE) i += ls_seek_dir(buf, ls+i+1, flag);
-			if (flag & LS_RECURSIVE) i += ls_seek_dir(buf, ls+i, flag);
+			if (flag & LS_RECURSIVE) i += ls_seek_dir(buf, ls+i, flag, n);
 		} else {
-			(ls+i)->status = 0;
 			i++;
+			(ls+i)->count = i; // count in dir
+			(ls+i)->dir = n;
 		}
 	}
 
@@ -106,7 +110,7 @@ LS_LIST *ls_dir(char *dir, int flag, int *num)
 {
 	int n = ls_count_dir(dir, flag);
 	if (!n) {
-		fprintf(stderr, "No file found [%s]!!\n", dir);
+		fprintf(stderr, "No file found in %s\n", dir);
 		return 0;
 	}
 
@@ -116,7 +120,7 @@ LS_LIST *ls_dir(char *dir, int flag, int *num)
 		return 0;
 	}
 
-	if (!ls_seek_dir(dir, ls, flag)) return 0;
+	if (!ls_seek_dir(dir, ls, flag, 0)) return 0;
 
 	if (flag & LS_RANDOM) {
 #ifdef RANDOM_H
