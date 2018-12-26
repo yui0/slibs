@@ -10,12 +10,13 @@ Single file libraries for C/C++.
 |**[wav.h](wav.h)** | audio | 61 | public domain | Wave format [ref: https://github.com/yui0/aplay-]
 |**[wave.h](wave.h)** | audio | 304 | public domain | utility for wave format
 |**[v4l2.h](v4l2.h)** | video | 614 | public domain | video for linux
+|**[imgp.h](imgp.h)** | image | 124 | public domain | mini image processing library
 |**[clock.h](clock.h)** | utils | 31 | public domain | clock function for linux [ref: https://github.com/yui0/waifu2x-glsl]
 |**[kbhit.h](kbhit.h)** | utils | 64 | public domain | kbhit function for linux [ref: https://github.com/yui0/aplay-]
 |**[ls.h](ls.h)** | utils | 155 | public domain | making list of files and directories [ref: https://github.com/yui0/aplay-]
 |**[mp4parser.h](mp4parser.h)** | utils | 6015 | LGPL-3.0 | mp4 parser
 |**[fmath.h](fmath.h)** | math | 142 | public domain | Fast math library
-|**[sgemm_sse.h](sgemm_sse.h)** | math | 451 | public domain | Fast GEMM function for SSE
+|**[sgemm_sse.h](sgemm_sse.h)** | math | 451 | public domain | Fast GEMM function for SSE [ref: https://github.com/yui0/ugemm]
 |**[random.h](random.h)** | math | 33 | public domain | XOR128 random function
 |**[gpgpu_glsl.h](gpgpu_glsl.h)** | GPGPU | 399 | public domain | GLSL frameworks [ref: https://github.com/yui0/waifu2x-glsl]
 |**[ocl.h](ocl.h)** | GPGPU | 190 | public domain | OpenCL frameworks [ref: https://github.com/yui0/waifu2x-ocl]
