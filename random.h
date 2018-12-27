@@ -19,7 +19,7 @@ void xor128_init(unsigned int s)
 	}
 }
 
-uint64_t xor128()
+static inline uint64_t xor128()
 {
 	uint64_t s1 = xor128_seed[0];
 	const uint64_t s0 = xor128_seed[1];

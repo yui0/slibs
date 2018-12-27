@@ -24,7 +24,7 @@ static float _b[KC*NC] __attribute__ ((aligned (16)));
 static float _c[MR*NR] __attribute__ ((aligned (16)));
 
 //  Packing complete panels from A (i.e. without padding)
-static void _pack_MRxk(int k, const float *A, int incRowA, int incColA, float *buffer)
+static inline void _pack_MRxk(int k, const float *A, int incRowA, int incColA, float *buffer)
 {
 	int i, j;
 
@@ -38,7 +38,7 @@ static void _pack_MRxk(int k, const float *A, int incRowA, int incColA, float *b
 }
 
 //  Packing panels from A with padding if required
-static void _pack_A(int mc, int kc, const float *A, int incRowA, int incColA, float *buffer)
+static inline void _pack_A(int mc, int kc, const float *A, int incRowA, int incColA, float *buffer)
 {
 	int mp  = mc / MR;
 	int _mr = mc % MR;
@@ -65,7 +65,7 @@ static void _pack_A(int mc, int kc, const float *A, int incRowA, int incColA, fl
 }
 
 //  Packing complete panels from B (i.e. without padding)
-static void _pack_kxNR(int k, const float *B, int incRowB, int incColB, float *buffer)
+static inline void _pack_kxNR(int k, const float *B, int incRowB, int incColB, float *buffer)
 {
 	int i, j;
 
@@ -79,7 +79,7 @@ static void _pack_kxNR(int k, const float *B, int incRowB, int incColB, float *b
 }
 
 //  Packing panels from B with padding if required
-static void _pack_B(int kc, int nc, const float *B, int incRowB, int incColB, float *buffer)
+static inline void _pack_B(int kc, int nc, const float *B, int incRowB, int incColB, float *buffer)
 {
 	int np  = nc / NR;
 	int _nr = nc % NR;
@@ -105,7 +105,7 @@ static void _pack_B(int kc, int nc, const float *B, int incRowB, int incColB, fl
 	}
 }
 
-void dot8x8_avx(const float *a, const float *b, float *c, const int kc)
+static inline void dot8x8_avx(const float *a, const float *b, float *c, const int kc)
 {
 	/*register*/ __m256 a0, b0, b1, b2, b3, b4, b5, b6, b7;
 	register __m256 c0, c1, c2, c3, c4, c5, c6, c7;
@@ -173,7 +173,7 @@ void dot8x8_avx(const float *a, const float *b, float *c, const int kc)
 #endif
 }
 //  Micro kernel for multiplying panels from A and B.
-static void _sgemm_micro_kernel(
+static inline void _sgemm_micro_kernel(
 	long kc,
 	float alpha, const float *A, const float *B,
 	float beta,
@@ -231,7 +231,7 @@ static void _sgemm_micro_kernel(
 }
 
 //  Compute Y += alpha*X
-static void sgeaxpy(
+static inline void sgeaxpy(
 	int           m,
 	int           n,
 	float        alpha,
@@ -260,7 +260,7 @@ static void sgeaxpy(
 }
 
 //  Compute X *= alpha
-static void sgescal(int m, int n, float alpha, float *X, int incRowX, int incColX)
+static inline void sgescal(int m, int n, float alpha, float *X, int incRowX, int incColX)
 {
 	int i, j;
 
@@ -281,7 +281,7 @@ static void sgescal(int m, int n, float alpha, float *X, int incRowX, int incCol
 
 //  Macro Kernel for the multiplication of blocks of A and B.  We assume that
 //  these blocks were previously packed to buffers _A and _B.
-static void _sgemm_macro_kernel(
+static inline void _sgemm_macro_kernel(
 	int     mc,
 	int     nc,
 	int     kc,
@@ -319,7 +319,7 @@ static void _sgemm_macro_kernel(
 }
 
 //  Compute C <- beta*C + alpha*A*B
-void sgemm_nn(
+static inline void sgemm_nn(
 	int m, int n, int k, float alpha,
 	const float *A, int incRowA, int incColA, const float *B, int incRowB, int incColB,
 	float beta, float *C, int incRowC, int incColC)
@@ -362,7 +362,7 @@ void sgemm_nn(
 	}
 }
 
-void sgemm_sse(
+static void sgemm_sse(
 	char		major,
 	char		transA,
 	char		transB,

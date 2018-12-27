@@ -17,6 +17,7 @@ void imgp_gray(uint8_t *s, int sx, int sy, int stride, uint8_t *p, int gstride)
 	}
 }
 
+#if 1
 void imgp_dilate(uint8_t *s, int w, int h, int k, uint8_t *p)
 {
 	for (int y=1; y<h-1; y++) {
@@ -37,27 +38,7 @@ void imgp_dilate(uint8_t *s, int w, int h, int k, uint8_t *p)
 		}
 	}
 }
-/*void imgp_dilate(uint8_t *s, int w, int h, int k, uint8_t *p)
-{
-	for (int y=0; y<h; y++) {
-		for (int x=0; x<w; x++) {
-			uint8_t *x = s;
-			uint8_t a = *s++;
-			for (int wy=k; wy>0; wy--) {
-				for (int wx=k; wx>0; wx--) {
-					if (a<l->x[n]) {
-						a = l->x[n];
-						*max = n;
-					}
-					n++;
-				}
-				n += step;
-			}
-			*p++ = a;
-		}
-	}
-}*/
-#if 0
+#else
 void imgp_dilate(uint8_t *s, int w, int h, int k, uint8_t *p)
 {
 	int size = 5;
