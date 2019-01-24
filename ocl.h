@@ -25,6 +25,7 @@
 #define OCL_OUTPUT	1
 #define OCL_INPUT	2
 #define OCL_INPUT_ONCE	4
+#define OCL_BUFFER	8
 // deprecated
 #define OCL_READ	1
 #define OCL_WRITE	2
@@ -228,15 +229,15 @@ static inline void oclKernelArgsWrite(args_t *args)
 {
 	while (args->size) {
 		if (args->flag & OCL_INPUT) {
-			if (args->type & CL_MEM_ALLOC_HOST_PTR) {
+			/*if (args->type & CL_MEM_ALLOC_HOST_PTR) {
 				void *p = clEnqueueMapBuffer(command_queue, args->p, CL_FALSE, CL_MAP_WRITE, 0, args->size, 0, NULL, NULL, NULL);
 				memcpy(p, args->s, args->size);
 				clEnqueueUnmapMemObject(command_queue, args->p, p, 0, NULL, NULL);
-			} else {
+			} else {*/
 				clEnqueueWriteBuffer(command_queue, args->p, CL_TRUE, 0, args->size, args->s, 0, 0, 0);
 				if (args->flag & OCL_INPUT_ONCE) args->flag ^= OCL_INPUT;
 //				printf("clEnqueueWriteBuffer size:%d %x\n", args->size, args->s);
-			}
+			//}
 		}
 		args++;
 	}
@@ -246,17 +247,26 @@ static inline void oclKernelArgsRead(args_t *args)
 {
 	while (args->size) {
 		if (args->flag & OCL_OUTPUT) {
-			if (args->type & CL_MEM_ALLOC_HOST_PTR) {
+			/*if (args->type & CL_MEM_ALLOC_HOST_PTR) {
 				void *p = clEnqueueMapBuffer(command_queue, args->p, CL_FALSE, CL_MAP_READ, 0, args->size, 0, NULL, NULL, NULL);
 				memcpy(args->s, p, args->size);
 				clEnqueueUnmapMemObject(command_queue, args->p, p, 0, NULL, NULL);
-			} else {
+			} else {*/
 				clEnqueueReadBuffer(command_queue, args->p, CL_TRUE, 0, args->size, args->s, 0, 0, 0);
 //				printf("clEnqueueReadBuffer size:%d %x\n", args->size, args->s);
-			}
+			//}
 		}
 		args++;
 	}
+}
+
+static inline void oclWrite(cl_mem mem, size_t offset, size_t size, void *p)
+{
+	clEnqueueWriteBuffer(command_queue, mem, CL_TRUE, offset, size, p, 0, 0, 0);
+}
+static inline void oclRead(cl_mem mem, size_t offset, size_t size, void *p)
+{
+	clEnqueueReadBuffer(command_queue, mem, CL_TRUE, offset, size, p, 0, 0, 0);
 }
 
 static inline void oclRun(ocl_t *kernel)
