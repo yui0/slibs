@@ -16,6 +16,7 @@ Single file libraries for C/C++.
 |**[ls.h](ls.h)** | utils | 155 | public domain | making list of files and directories [ref: https://github.com/yui0/aplay-]
 |**[mp4parser.h](mp4parser.h)** | utils | 6015 | LGPL-3.0 | mp4 parser
 |**[fmath.h](fmath.h)** | math | 142 | public domain | Fast math library
+|**[sgemm_ocl.h](sgemm_ocl.h)** | math | 662 | public domain | Fast GEMM function for OpenCL [ref: https://github.com/yui0/ugemm]
 |**[sgemm_sse.h](sgemm_sse.h)** | math | 451 | public domain | Fast GEMM function for SSE [ref: https://github.com/yui0/ugemm]
 |**[random.h](random.h)** | math | 33 | public domain | XOR128 random function
 |**[gpgpu_glsl.h](gpgpu_glsl.h)** | GPGPU | 399 | public domain | GLSL frameworks [ref: https://github.com/yui0/waifu2x-glsl]
