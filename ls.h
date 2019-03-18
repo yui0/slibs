@@ -108,7 +108,7 @@ int ls_comp_func(const void *a, const void *b)
 
 LS_LIST *ls_dir(char *dir, int flag, int *num)
 {
-	int n = ls_count_dir(dir, flag);
+	int n = ls_count_dir(dir, flag)+1; // FIXME: +1 ??
 	if (!n) {
 		fprintf(stderr, "No file found in %s\n", dir);
 		return 0;
