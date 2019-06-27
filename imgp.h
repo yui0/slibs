@@ -1,8 +1,11 @@
 /* public domain Simple, Minimalistic, Image processing library
- *	©2018 Yuichiro Nakada
+ *	©2018-2019 Yuichiro Nakada
  *
  * Basic usage:
+ *	imgp_gray(pixels, w, h, w, gray, w);
  *
+ *	uint8_t ahash[AHASH_SIZE*AHASH_SIZE/8];
+ *	imgp_ahash(gray, w, h, ahash);
  * */
 
 void imgp_gray(uint8_t *s, int sx, int sy, int stride, uint8_t *p, int gstride)
@@ -103,3 +106,30 @@ void imgp_reverse(uint8_t *s, int w, int h, uint8_t *p)
 		*p++ = 255 - *s++;
 	}
 }
+
+#ifdef STBIR_INCLUDE_STB_IMAGE_RESIZE_H
+#define AHASH_SIZE	16
+void imgp_ahash(uint8_t *s, int w, int h, uint8_t *ahash)
+{
+	uint8_t resize[AHASH_SIZE*AHASH_SIZE];
+	stbir_resize_uint8(s, w, h, 0, resize, AHASH_SIZE, AHASH_SIZE, 0, 1);
+
+	double avg = 0;
+	for (int i=0; i<AHASH_SIZE*AHASH_SIZE; i++) {
+		avg += resize[i];
+	}
+	avg /= AHASH_SIZE*AHASH_SIZE;
+	//printf("avg: %f\n", avg);
+
+	for (int i=0; i<AHASH_SIZE*AHASH_SIZE; i++) {
+		ahash[i/8] <<= 1;
+		if (avg <= (double)resize[i]) ahash[i/8] |= 1;
+		else ahash[i/8] &= ~1;
+	}
+
+	/*for (int i=0; i<AHASH_SIZE*AHASH_SIZE/8; i++) {
+		printf("%02x", ahash[i]);
+	}
+	printf("\n");*/
+}
+#endif
