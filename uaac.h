@@ -13260,6 +13260,7 @@ _ATOM uaac_findMp4Atom(const char *atom, const uint32_t pos, const int loop, int
 		r = lseek(fd, ret.pos, SEEK_SET);
 		read(fd, &info, sizeof(info));
 		ret.size = REV32(info.size);
+		//printf("%x +%x [%s][%s]\n",ret.pos,ret.size,atom,info.name);
 		if (!strncmp(atom, info.name, 4)) return ret;
 		if (ret.size<=8) break;
 		ret.pos += ret.size;
@@ -13416,6 +13417,10 @@ uint8_t *uaac_extract_aac(int fd, int *len, int *samplerate, int *channels)
 	uint32_t stsz = uaac_findMp4Atom("stsz", stbl + 8, 1, fd).pos;
 	uint32_t stsc = uaac_findMp4Atom("stsc", stbl + 8, 1, fd).pos;
 	int samplesPerChunk = uaac_read32(stsc +8+4 +8, fd);
+	if (samplesPerChunk>65535) {
+		printf("error at samplesPerChunk:%d\n", samplesPerChunk);
+		return 0; // something is bad
+	}
 	int c = 0;
 	for (int i=0; i<nChunks-1; i++) {
 		size[i] = 0;
