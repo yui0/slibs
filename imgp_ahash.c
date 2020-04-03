@@ -1,5 +1,5 @@
 // Average Hash
-// clang -Os -o ahash ahash.c -lm
+// clang -Os -o imgp_ahash imgp_ahash.c -lm
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
