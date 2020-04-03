@@ -1,4 +1,4 @@
-// clang -Os -o imgp imgp.c -lm
+// clang -Os -o imgp_contour imgp_contour.c -lm
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -20,7 +20,7 @@ int main(int argc, char* argv[])
 	uint8_t *diff = gray+w*h*2;
 	uint8_t *contour = gray+w*h*3;
 	imgp_gray(pixels, w, h, w, gray, w);
-	imgp_dilate(gray, w, h, /*5,*/ dilated);
+	imgp_dilate(gray, w, h, 1, dilated);
 	stbi_write_jpg("dilated.jpg", w, h, 1, dilated, 0);
 	imgp_absdiff(gray, dilated, w, h, diff);
 	stbi_write_jpg("diff.jpg", w, h, 1, diff, 0);
