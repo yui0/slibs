@@ -10,8 +10,9 @@
  *	uint8_t ahash[AHASH_SIZE*AHASH_SIZE/8];
  *	imgp_ahash(gray, w, h, ahash);		// only 8bit
  *
- *	imgp_filter(out, in, w, h, kernel, kernel_size, divisor, offset);	// only 24bit
+ *	imgp_filter(in, w, h, out, kernel, kernel_size, divisor, offset);	// only 24bit
  *	imgp_color_quant(pixels, w, h, color);	// only 24bit
+ *	imgp_cq24to15(pixels, w, h, 3, pixels, 1);
  * */
 
 void imgp_gray(uint8_t *s, int sx, int sy, int stride, uint8_t *p, int gstride)
@@ -168,7 +169,7 @@ void imgp_ahash(uint8_t *s, int w, int h, uint8_t *ahash)
 	3/64.0, 9/64.0, 9/64.0, 3/64.0,
 	1/64.0, 3/64.0, 3/64.0, 1/64.0,
 };*/
-void imgp_filter(uint8_t *o, uint8_t *im, int w, int h, double *K, int Ks, double divisor, double offset)
+void imgp_filter(uint8_t *im, int w, int h, uint8_t *o, double *K, int Ks, double divisor, double offset)
 {
 	unsigned int ix, iy, x, y;
 	int kx, ky;
@@ -395,7 +396,7 @@ void imgp_color_quant(unsigned char *im, int w, int h, int n_colors)
 	unsigned char *pix = im;
 	node_heap heap = { 0, 0, 0 };
 
-	oct_node root = node_new(0, 0, 0), got;
+	oct_node root = node_new(0, 0, 0);
 	for (i=0; i < w * h; i++, pix += 3) {
 		heap_add(&heap, node_insert(root, pix));
 	}
@@ -404,16 +405,15 @@ void imgp_color_quant(unsigned char *im, int w, int h, int n_colors)
 		heap_add(&heap, node_fold(pop_heap(&heap)));
 	}
 
-	double c;
-	for (i=1; i < heap.n; i++) {
-		got = heap.buf[i];
-		c = got->count;
+	/*for (i=1; i < heap.n; i++) {
+		oct_node got = heap.buf[i];
+		double c = got->count;
 		got->r = got->r / c + .5;
 		got->g = got->g / c + .5;
 		got->b = got->b / c + .5;
 		printf("%2d | %3lu %3lu %3lu (%d pixels)\n",
 		       i, got->r, got->g, got->b, got->count);
-	}
+	}*/
 
 	for (i=0, pix = im; i < w * h; i++, pix += 3) {
 		color_replace(root, pix);
@@ -421,4 +421,21 @@ void imgp_color_quant(unsigned char *im, int w, int h, int n_colors)
 
 	node_free();
 	free(heap.buf);
+}
+
+// 24bit -> 15bit
+uint8_t rndunit_24to15(uint8_t u, int dither)
+{
+	uint8_t unit = (u & 0b11111000)>>3;
+	uint8_t weight = (u & 0b00000111);
+	if (dither && (weight - (rand() % 7) >=0) && (unit < 31)) {
+		unit++;
+	}
+	return unit<<3;
+}
+void imgp_cq24to15(uint8_t *s, int w, int h, int bps, uint8_t *p, int dither)
+{
+	for (int n=0; n<w*h*bps; n++) {
+		*p++ = rndunit_24to15(*s++, dither);
+	}
 }

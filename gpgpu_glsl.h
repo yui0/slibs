@@ -9,6 +9,9 @@
 #endif
 #define GLFW_INCLUDE_GLU
 
+#ifdef _MSC_VER
+#define strdup	_strdup
+#endif
 #ifdef _WIN32
 	#include <windows.h>
 	#include <GL/glew.h>
@@ -61,8 +64,10 @@
 char pass_through[] = STRINGIFY(
 
 #ifdef GL_ES
-precision highp float;
+\n
+precision highp float;\n
 #endif
+\n
 
 attribute vec3 pos;
 attribute vec2 tex;
@@ -98,6 +103,7 @@ GLuint coLoadShader(GLenum shaderType, const char* pSource)
 		case '{':
 		case ';':
 			if (*p==0x20) *p = '\n';
+//			if (*p==0x20 && *(p+1)!='i') *p = '\n';
 		}
 	}
 

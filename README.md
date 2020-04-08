@@ -13,8 +13,8 @@ Single file libraries for C/C++.
 |**[v4l2.h](v4l2.h)** | video | 614 | public domain | video for linux
 |**[mp4parser.h](mp4parser.h)** | video | 6015 | LGPL-3.0 | mp4 parser
 |**[jo_mpeg.h](jo_mpeg.h)** | video | 317 | public domain | MPEG1/2 encoder [http://www.jonolick.com/home/mpeg-video-writer]
-|**[imgp.h](imgp.h)** | image | 124 | public domain | mini image processing library
-|**[potracelib.h](potracelib.h)** | image | 2466 | GPL | Transforming bitmaps into vector graphics [http://potrace.sourceforge.net/]
+|**[imgp.h](imgp.h)** | image | 441 | public domain | mini image processing library
+|**[potracelib.h](potracelib.h)** | image | 2466 | GPL | Transforming bitmaps into vector graphics [http://potrace.sourceforge.net/, [Document](http://potrace.sourceforge.net/potracelib.pdf), [Example](https://github.com/yui0/img2vec)]
 |**[fmath.h](fmath.h)** | math | 142 | public domain | Fast math library
 |**[random.h](random.h)** | math | 33 | public domain | XOR128 random function
 |**[sgemm_ocl.h](sgemm_ocl.h)** | math | 662 | public domain | Fast GEMM function for OpenCL [ref: https://github.com/yui0/ugemm]
@@ -29,7 +29,7 @@ Single file libraries for C/C++.
 |**[parson.h](parson.h)** | utils | 2239 | MIT | Lightweight JSON library [https://github.com/kgabis/parson]
 
 ## References
-- [A single-header ANSI C gui library ](https://github.com/vurtun/nuklear)
+- [A single-header ANSI C gui library](https://github.com/vurtun/nuklear)
 - [Sean Barretts single header libraries](https://github.com/nothings/single_file_libs)
 - [Single header libraries for C/C++](https://github.com/vurtun/mmx)
 - [enkiTS: source implementation for mm_sched.h](https://github.com/dougbinks/enkiTS)
