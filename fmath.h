@@ -43,7 +43,7 @@ void sincos(double rad, double *x, double *y)
 		p++;
 		s = s*z+(*p);
 		p++;
-	}while (p<div+8);
+	} while (p<div+8);
 	c = c*z;
 	s = s*rad;
 	for (int i=0; i<5; i++) {

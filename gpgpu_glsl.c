@@ -2,8 +2,10 @@
 #include <stdlib.h>
 #include "gpgpu_glsl.h"
 
-#define DATA_XSIZE	4096
-#define DATA_YSIZE	2048
+//#define DATA_XSIZE	4096 // GLES ok
+//#define DATA_YSIZE	2048
+#define DATA_XSIZE	4
+#define DATA_YSIZE	4
 #define KERNEL_ARRAY	9
 
 char conv2d[] = STRINGIFY(
@@ -125,6 +127,7 @@ int32_t main(int32_t argc, char* argv[])
 	coBindInputTexture(prog, texture1, GL_TEXTURE1, "W");
 	coBindOutputTexture(N, M, texture3);
 
+	coUniform2f(prog, "uv", 0.0, 0.0);
 	coCompute();
 
 	float *d = coReadDataf(N, M, 0);
@@ -134,9 +137,9 @@ int32_t main(int32_t argc, char* argv[])
 	}
 	printf("\n");
 
-	unsigned char *dd = (unsigned char*)d;
-	for (int i=0; i<M*N*4; i++) printf("%x ", dd[i]);
-	printf("\n");
+//	unsigned char *dd = (unsigned char*)d;
+//	for (int i=0; i<M*N*4; i++) printf("%x ", dd[i]);
+//	printf("\n");
 	free(d);
 
 	coTerm();
