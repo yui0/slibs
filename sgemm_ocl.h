@@ -1,8 +1,8 @@
 /* public domain Simple, Minimalistic, Fast GEMM library
- *	©2019 Yuichiro Nakada
+ *	©2019-2020 Yuichiro Nakada
  *
  * Basic usage:
- *	sgemm_ocl_init(max_buffer_size);
+ *	sgemm_ocl_init(platform, device, max_buffer_size);
  *	sgemm_ocl('N', 'N', M, N, K, A, B, C);
  *	sgemm_ocl_finish();
  * */
@@ -597,12 +597,12 @@ ocl_t _kernel[] = {
 int _ksz = sizeof(_kernel)/sizeof(_kernel[0]);
 
 #define max(a, b)	((a) > (b) ? (a) : (b))
-void sgemm_ocl_init(int size)
+void sgemm_ocl_init(int platform, int device, int size)
 {
 //	_args[0].s = _mat = malloc(size);
 	_args[0].size = size;
 
-	oclSetup(0, 0);
+	oclSetup(platform, device);
 	oclKernel(_kernel, _ksz, "-cl-denorms-are-zero -cl-finite-math-only -cl-fast-relaxed-math -Werror", sgemm_kcode);
 	oclKernelArgs(_kernel, _ksz);
 }

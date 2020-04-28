@@ -1,7 +1,7 @@
 //---------------------------------------------------------
 //	Cat's eye
 //
-//		©2016-2019 Yuichiro Nakada
+//		©2016-2020 Yuichiro Nakada
 //---------------------------------------------------------
 
 #include <stdio.h>
@@ -31,6 +31,7 @@
 #define OCL_WRITE	2
 #define OCL_WRITE_ONCE	4
 
+#define _DEBUG
 #ifdef _DEBUG
 #define checkOcl(err) __checkOclErrors((err), #err, __FILE__, __LINE__)
 static void __checkOclErrors(const cl_int err, const char* const func, const char* const file, const int line)
@@ -145,14 +146,14 @@ void oclSetup(int platform, int device)
 		type = CL_DEVICE_TYPE_ACCELERATOR;
 	}
 
-	ret = clGetPlatformIDs(MAX_PLATFORMS, platform_id, &num_platforms);
-	ret = clGetDeviceIDs(platform_id[platform], type, MAX_DEVICES, device_id, &num_devices);
+	checkOcl(ret = clGetPlatformIDs(MAX_PLATFORMS, platform_id, &num_platforms));
+	checkOcl(ret = clGetDeviceIDs(platform_id[platform], type, MAX_DEVICES, device_id, &num_devices));
 
 	// device name (option)
 	size_t size;
 	char str[256];
 	clGetDeviceInfo(device_id[device], CL_DEVICE_NAME, sizeof(str), str, &size);
-	printf("%s (platform %d, device %d)\n", str, platform, device);
+	printf("%s (platform %d/%d, device %d/%d)\n", str, platform, num_platforms, device, num_devices);
 
 	context = clCreateContext(NULL, 1, &device_id[device], NULL, NULL, &ret);
 //#if ! defined(CL_VERSION_2_0)
