@@ -31,7 +31,7 @@
 #define OCL_WRITE	2
 #define OCL_WRITE_ONCE	4
 
-#define _DEBUG
+//#define _DEBUG
 #ifdef _DEBUG
 #define checkOcl(err) __checkOclErrors((err), #err, __FILE__, __LINE__)
 static void __checkOclErrors(const cl_int err, const char* const func, const char* const file, const int line)
