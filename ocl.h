@@ -112,8 +112,9 @@ typedef struct {
 
 int ocl_device;
 cl_device_id device_id[MAX_DEVICES];
-cl_context context;
+cl_context ocl_context;
 cl_command_queue command_queue;
+cl_event ocl_e;
 
 #ifdef _WIN32
 char *_getenv(char *environment_name)
@@ -127,6 +128,17 @@ char *_getenv(char *environment_name)
 #else
 #define _getenv	getenv
 #endif
+
+// for OpenCL 1.x
+inline int ceil_int_div(int i, int div)
+{
+	return (i + div - 1) / div;
+}
+
+inline int ceil_int(int i, int div)
+{
+	return ceil_int_div(i, div) * div;
+}
 
 void oclSetup(int platform, int device)
 {
@@ -155,13 +167,13 @@ void oclSetup(int platform, int device)
 	clGetDeviceInfo(device_id[device], CL_DEVICE_NAME, sizeof(str), str, &size);
 	printf("%s (platform %d/%d, device %d/%d)\n", str, platform, num_platforms, device, num_devices);
 
-	context = clCreateContext(NULL, 1, &device_id[device], NULL, NULL, &ret);
+	ocl_context = clCreateContext(NULL, 1, &device_id[device], NULL, NULL, &ret);
 //#if ! defined(CL_VERSION_2_0)
-	command_queue = clCreateCommandQueue(context, device_id[device], 0, &ret);
+	command_queue = clCreateCommandQueue(ocl_context, device_id[device], 0, &ret);
 //#else
 	/*cl_queue_properties queueProps[] =
 		{ CL_QUEUE_PROPERTIES, (CL_QUEUE_ON_DEVICE && CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE), 0 };*/
-//	command_queue = clCreateCommandQueueWithProperties(context, device_id[device], /*queueProps*/0, &ret);
+//	command_queue = clCreateCommandQueueWithProperties(ocl_context, device_id[device], /*queueProps*/0, &ret);
 //#endif
 
 #ifdef _DEBUG
@@ -186,7 +198,7 @@ void oclKernel(ocl_t *kernel, int n, char *opt, char *kernel_code)
 	cl_int ret;
 	const char* src[1] = { kernel_code };
 
-	cl_program program = clCreateProgramWithSource(context, 1, (const char **)&src, 0, &ret);
+	cl_program program = clCreateProgramWithSource(ocl_context, 1, (const char **)&src, 0, &ret);
 	ret = clBuildProgram(program, 1, &device_id[ocl_device], NULL, NULL, NULL);
 	if (ret) {
 		size_t len = 0;
@@ -217,7 +229,7 @@ void oclKernelArgs(ocl_t *kernel, int n)
 		args_t *args = kernel->a;
 		while (args->size) {
 			if (args->type>0) {
-				if (!args->p) args->p = clCreateBuffer(context, args->type, args->size, NULL, &ret);
+				if (!args->p) args->p = clCreateBuffer(ocl_context, args->type, args->size, NULL, &ret);
 				if (!args->p) printf("clCreateBuffer error!! %d\n", ret);
 			}
 			args++;
@@ -235,7 +247,7 @@ static inline void oclKernelArgsWrite(args_t *args)
 				memcpy(p, args->s, args->size);
 				clEnqueueUnmapMemObject(command_queue, args->p, p, 0, NULL, NULL);
 			} else {*/
-				clEnqueueWriteBuffer(command_queue, args->p, CL_TRUE, 0, args->size, args->s, 0, 0, 0);
+				checkOcl(clEnqueueWriteBuffer(command_queue, args->p, CL_TRUE, 0, args->size, args->s, 0, 0, 0));
 				if (args->flag & OCL_INPUT_ONCE) args->flag ^= OCL_INPUT;
 //				printf("clEnqueueWriteBuffer size:%d %x\n", args->size, args->s);
 			//}
@@ -253,7 +265,7 @@ static inline void oclKernelArgsRead(args_t *args)
 				memcpy(args->s, p, args->size);
 				clEnqueueUnmapMemObject(command_queue, args->p, p, 0, NULL, NULL);
 			} else {*/
-				clEnqueueReadBuffer(command_queue, args->p, CL_TRUE, 0, args->size, args->s, 0, 0, 0);
+				checkOcl(clEnqueueReadBuffer(command_queue, args->p, CL_TRUE, 0, args->size, args->s, 0, 0, 0));
 //				printf("clEnqueueReadBuffer size:%d %x\n", args->size, args->s);
 			//}
 		}
@@ -284,7 +296,7 @@ static inline void oclRun(ocl_t *kernel)
 	}
 
 	size_t *local = kernel->local_size[0] ? kernel->local_size : 0;
-	checkOcl(clEnqueueNDRangeKernel(command_queue, kernel->k, kernel->dim, NULL, kernel->global_size, local, 0, NULL, NULL));
+	checkOcl(clEnqueueNDRangeKernel(command_queue, kernel->k, kernel->dim, NULL, kernel->global_size, local, 0, NULL, &ocl_e));
 #ifdef _DEBUG
 	printf("clEnqueueNDRangeKernel (%zu/%zu,%zu/%zu,%zu/%zu)\n", kernel->local_size[0], kernel->global_size[0], kernel->local_size[1], kernel->global_size[1], kernel->local_size[2], kernel->global_size[2]);
 #endif
@@ -311,10 +323,20 @@ void oclWait()
 	clFinish(command_queue);
 }
 
+cl_ulong oclTime()
+{
+	clWaitForEvents(1, &ocl_e);
+	cl_ulong start, end;
+	clGetEventProfilingInfo(ocl_e, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &start, NULL);
+	clGetEventProfilingInfo(ocl_e, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &end, NULL);
+	clReleaseEvent(ocl_e);
+	return end-start;
+}
+
 void oclFinish()
 {
 	clFlush(command_queue);
 	clFinish(command_queue);
 	clReleaseCommandQueue(command_queue);
-	clReleaseContext(context);
+	clReleaseContext(ocl_context);
 }
