@@ -49,6 +49,7 @@ __kernel void gemm_nt(__global float* restrict gm, const int8 _info)
 	const int globalRow = get_global_id(0); // Row ID of C (0..M)
 	const int globalCol = get_global_id(1); // Col ID of C (0..N)
 
+//	if (globalRow >= M && globalCol >= N) return;
 	if (globalRow < M && globalCol < N) {
 		// Compute a single element (loop over K)
 		float acc = 0.0f;
@@ -99,10 +100,50 @@ __kernel void transpose(__global float* gm, const int8 _info)
 	}
 }
 
+__kernel void im2col(__global float* gm, const int8 _info)
+{
+	__global float* im_src = (__global float*)(gm + _info.s0);
+	int channels   = _info.s1;
+	int height_inp = _info.s2;
+	int width_inp  = _info.s3;
+	int kernel_h   = _info.s4;
+	int kernel_w   = _info.s4;
+	int pad_h      = _info.s5;
+	int pad_w      = _info.s5;
+	int stride_h   = _info.s6;
+	int stride_w   = _info.s6;
+	__global float* im_col = (__global float*)(gm + _info.s7);
+	int height_out = (height_inp + 2 * pad_h - kernel_h) / stride_h + 1;
+	int width_out  = (width_inp + 2 * pad_w - kernel_w) / stride_w + 1;
+
+	int index = get_global_id(0);
+	if (index >= height_out * width_out * channels) return;
+
+	int j_out = index % width_out;
+	int i_out = (index / width_out) % height_out;
+	int c_inp = (index / width_out) / height_out;
+
+	int c_out = c_inp * kernel_h * kernel_w;
+	int i_inp = i_out * stride_h - pad_h;
+	int j_inp = j_out * stride_w - pad_w;
+
+	im_src += (c_inp * height_inp + i_inp) * width_inp + j_inp;
+	im_col += (c_out * height_out + i_out) * width_out + j_out;
+
+	for (int ki = 0; ki < kernel_h; ++ki) {
+		for (int kj = 0; kj < kernel_w; ++kj) {
+			int i = i_inp + ki;
+			int j = j_inp + kj;
+			*im_col = (i >= 0 && j >= 0 && i < height_inp && j < width_inp) ? im_src[ki * width_inp + kj] : 0;
+			im_col += height_out * width_out;
+		}
+	}
+}
+
 );
 
 // Threadblock sizes
-#define TS 16
+#define TS	16
 
 float *_mat;
 int _info[8];
@@ -119,6 +160,8 @@ ocl_t _kernel[] = {
 
 	// global: k, n
 	{ "transpose", 0, 2,{1,1,1},{TRANSPOSEX,TRANSPOSEY,1}, _args },
+
+	{ "im2col", 0, 1,{1,1,1},{16,1,1}, _args },
 };
 int _ksz = sizeof(_kernel)/sizeof(_kernel[0]);
 
@@ -174,7 +217,7 @@ static inline void sgemm_ocl(char ta, char tb, int m, int n, int k, float *a, fl
 	_kernel[0].global_size[0] = ceil_int(m, TS);
 	_kernel[0].global_size[1] = ceil_int(n, TS);
 
-	oclKernelArgsWrite(_args);
+//	oclKernelArgsWrite(_args);
 	oclRun(_kernel);
 //	oclKernelArgsRead(_args);
 	oclRead(_args[0].p, sizeof(float)*(mk+kn), sizeof(float)*mn, c);
@@ -184,4 +227,64 @@ void sgemm_ocl_finish()
 //	free(_mat);
 	oclReleaseKernel(_kernel, _ksz);
 	oclFinish();
+}
+static inline void ocl_im2col(float *inputs, int ich, int w, int h, int k, int pad, int stride, float *outputs)
+{
+	// im2col(pix, 3, h, w, 4, 4, 2, 2, 1, 1, workspace);
+	int hcol = (h + 2 * pad - k) / stride + 1;
+	int wcol = (w + 2 * pad - k) / stride + 1;
+	_info[0] = wcol*hcol*ich*k*k;	// inputs
+	_info[1] = ich;
+	_info[2] = h;
+	_info[3] = w;
+	_info[4] = k;
+	_info[5] = pad;
+	_info[6] = stride;
+	_info[7] = 0;			// outputs
+	_kernel[2].global_size[0] = ceil_int(_info[0], 16);
+	oclWrite(_args[0].p, sizeof(float)*_info[0], sizeof(float)*w*h*ich, inputs);
+	oclRun(_kernel+2);
+	oclRead(_args[0].p, sizeof(float)*_info[7], sizeof(float)*_info[0], outputs);
+//	oclWait();
+}
+static inline void ocl_convolution(float *inputs, int ich, int w, int h, float *weights, int k, int pad, int stride, float *outputs, int ch)
+{
+	// im2col(pix, 3, h, w, 4, 4, 2, 2, 1, 1, workspace);
+	int hcol = (h + 2 * pad - k) / stride + 1;
+	int wcol = (w + 2 * pad - k) / stride + 1;
+	oclWrite(_args[0].p, 0, sizeof(float)*w*h*ich, inputs);
+	_info[0] = 0;		// inputs
+//	oclWrite(_args[0].p, sizeof(float)*wcol*hcol*ich, sizeof(float)*w*h*ich, inputs);
+//	_info[0] = wcol*hcol*ich;	// inputs
+	_info[1] = ich;
+	_info[2] = h;
+	_info[3] = w;
+	_info[4] = k;
+	_info[5] = pad;
+	_info[6] = stride;
+	_info[7] = w*h*ich;	// outputs
+//	_info[7] = 0;			// outputs
+	_kernel[2].global_size[0] = ceil_int(_info[7], 16);
+//	oclKernelArgsWrite(_args);
+	oclRun(_kernel+2);
+
+/*	float *workspace = malloc(sizeof(float)*wcol*hcol*ich*k*k);
+	oclRead(_args[0].p, sizeof(float)*_info[7], sizeof(float)*wcol*hcol*ich*k*k, workspace);
+	oclWrite(_args[0].p, sizeof(float)*_info[7], sizeof(float)*wcol*hcol*ich*k*k, workspace);
+	free(workspace);*/
+//	oclWrite(_args[0].p, sizeof(float)*w*h*ich, sizeof(float)*wcol*hcol*ich*k*k, inputs);
+
+	// sgemm_ocl('N', 'T', ch, wcol*hcol, k*k, magic_kernel, workspace, pix);
+	oclWrite(_args[0].p, sizeof(float)*(w*h*ich+wcol*hcol*ich*k*k), sizeof(float)*k*k*ich*ch, weights);
+	_info[0] = ch;
+	_info[1] = wcol*hcol /* *batch */;
+	_info[2] = k*k*ich;
+	_info[3] = w*h*ich+wcol*hcol*ich*k*k;			// a (weights)
+	_info[4] = w*h*ich;					// b (col)
+	_info[5] = w*h*ich+wcol*hcol*ich*k*k +k*k*ich*ch;	// c
+	_kernel[0].global_size[0] = ceil_int(_info[0], TS);
+	_kernel[0].global_size[1] = ceil_int(_info[1], TS);
+//	oclKernelArgsWrite(_args);
+	oclRun(_kernel);
+	oclRead(_args[0].p, sizeof(float)*_info[5], sizeof(float)*wcol*hcol*ch, outputs);
 }
