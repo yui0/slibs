@@ -275,11 +275,11 @@ static inline void oclKernelArgsRead(args_t *args)
 
 static inline void oclWrite(cl_mem mem, size_t offset, size_t size, void *p)
 {
-	clEnqueueWriteBuffer(command_queue, mem, CL_TRUE, offset, size, p, 0, 0, 0);
+	checkOcl(clEnqueueWriteBuffer(command_queue, mem, CL_TRUE, offset, size, p, 0, 0, 0));
 }
 static inline void oclRead(cl_mem mem, size_t offset, size_t size, void *p)
 {
-	clEnqueueReadBuffer(command_queue, mem, CL_TRUE, offset, size, p, 0, 0, 0);
+	checkOcl(clEnqueueReadBuffer(command_queue, mem, CL_TRUE, offset, size, p, 0, 0, 0));
 }
 
 static inline void oclRun(ocl_t *kernel)
@@ -288,7 +288,7 @@ static inline void oclRun(ocl_t *kernel)
 	args_t *args = kernel->a;
 	while (args->size) {
 #ifdef _DEBUG
-		printf("clSetKernelArg:[%d] %lu (%x/%d) %x\n", n, sizeof(cl_mem), (unsigned int)args->p, args->size, (unsigned int)args->s);
+		printf("clSetKernelArg[%d]: size %d %x\n", n, /*sizeof(cl_mem), (unsigned int)args->p,*/ args->size, (unsigned int)args->s);
 #endif
 		if (args->type>0) checkOcl(clSetKernelArg(kernel->k, n++, sizeof(cl_mem), (void*)&args->p));
 		else checkOcl(clSetKernelArg(kernel->k, n++, args->size, (void*)args->s));

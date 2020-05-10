@@ -8,6 +8,7 @@
 //#define STB_IMAGE_RESIZE_IMPLEMENTATION
 //#include "stb_image_resize.h"
 
+#define _DEBUG
 //#include "sgemm_ocl.h"
 #include "sgemm_ocl1.h"
 
@@ -43,6 +44,8 @@ void gemm(char ta, char tb, int M, int N, int K, float *a, float *b, float *c)
 			for (int k=0; k<K; k++) {
 //				sum += a[k*M + m] * b[n*K + k];
 				sum += a[k*M + m] * b[n + N*k]; // NT
+//				sum += a[k + m*K] * b[n + N*k]; // TT
+//				sum += a[k + m*K] * b[n*K + k]; // TN
 			}
 			//Z[m + n * ldc] = alpha * sum + beta * Z[m + n * ldc];
 			c[n*M + m] = sum;
@@ -83,26 +86,6 @@ real magic_kernel[4*4] = {
 	1/64.0, 3/64.0, 3/64.0, 1/64.0,
 };
 
-/*const int tab64[64] = {
-	63,  0, 58,  1, 59, 47, 53,  2,
-	60, 39, 48, 27, 54, 33, 42,  3,
-	61, 51, 37, 40, 49, 18, 28, 20,
-	55, 30, 34, 11, 43, 14, 22,  4,
-	62, 57, 46, 52, 38, 26, 32, 41,
-	50, 36, 17, 19, 29, 10, 13, 21,
-	56, 45, 25, 31, 35, 16,  9, 12,
-	44, 24, 15,  8, 23,  7,  6,  5};
-
-int log2_64(uint64_t value)
-{
-	value |= value >> 1;
-	value |= value >> 2;
-	value |= value >> 4;
-	value |= value >> 8;
-	value |= value >> 16;
-	value |= value >> 32;
-	return tab64[((uint64_t)((value - (value >> 1))*0x07EDD5E59A4E28C2)) >> 58];
-}*/
 int main(int argc, char* argv[])
 {
 	char *name = argv[1];
@@ -139,10 +122,9 @@ int main(int argc, char* argv[])
 		}
 	}
 
-	sgemm_ocl_init(platform, device, (w*h+w*h*4*4+4*4)*sizeof(float));
-//	sgemm_ocl_init(platform, device, 1<<log2_64((w*h+w*h*4*4+4*4)*sizeof(float)));
+	sgemm_ocl_init(platform, device, (w*h*1+w*h*1*4*4+4*4*1*1+w*h*1)*sizeof(float));
 
-	real *workspace = malloc(sizeof(real)*w*h*3*4*4*3);
+/*	real *workspace = malloc(sizeof(real)*w*h*3*4*4*3);
 //	im2col(pix, 3, h, w, 4, 4, 2, 2, 1, 1, workspace);
 //	w += 1;
 //	h += 1;
@@ -150,14 +132,27 @@ int main(int argc, char* argv[])
 	w -= 1;
 	h -= 1;
 
-	// z = x * W [A(m,k) B(k,n) C(m,n)], cnhw
-//	gemm('C', 'N', 'N', l->ox*l->oy*1, l->ch, l->ksize*l->ksize*l->ich, 1, workspace, l->ox*l->oy, l->W, l->ksize*l->ksize*l->ich, 0, l->z +l->outputs*i, l->ox*l->oy);
-	//sgemm_ocl('N', 'N', w*h, 1, 4*4, workspace, magic_kernel, pix);
-//	gemm('N', 'N', w*h, 1, 4*4, workspace, magic_kernel, pix);
-
 	// https://qiita.com/t-tkd3a/items/6b17f296d61d14e12953
 	sgemm_ocl('N', 'T', 1, w*h, 4*4, magic_kernel, workspace, pix);
 //	gemm('N', 'T', 1, w*h, 4*4, magic_kernel, workspace, pix);
+//	gemm('N', 'N', w*h, 1, 4*4, workspace, magic_kernel, pix);
+	free(workspace);*/
+
+/*	real *workspace = malloc(sizeof(real)*w*h*3*4*4*3);
+	ocl_im2col(pix, 1, w, h, 4, 1, 1, workspace);
+	w -= 1;
+	h -= 1;
+	gemm('N', 'T', 1, w*h, 4*4, magic_kernel, workspace, pix);
+//	gemm('N', 'T', w*h, 1, 4*4, workspace, magic_kernel, pix);
+//	gemm('N', 'N', w*h, 1, 4*4, workspace, magic_kernel, pix);
+	free(workspace);*/
+
+//	real *workspace = malloc(sizeof(real)*w*h*3*4*4*3);
+//	im2col(pix, 1, h, w, 4, 4, 1, 1, 1, 1, workspace);
+//	ocl_convolution(workspace, 1, w, h, magic_kernel, 4, 1, 1, pix, 1);
+	ocl_convolution(pix, 1, w, h, magic_kernel, 4, 1, 1, pix, 1);
+	w -= 1;
+	h -= 1;
 
 	sgemm_ocl_finish();
 
@@ -170,7 +165,6 @@ int main(int argc, char* argv[])
 	}
 	stbi_write_jpg(outfile, w, h, 3, pixels, 0);
 
-	free(workspace);
 	free(pix);
 
 	stbi_image_free(pixels);

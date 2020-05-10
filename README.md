@@ -17,8 +17,8 @@ Single file libraries for C/C++.
 |**[potracelib.h](potracelib.h)** | image | 2466 | GPL | Transforming bitmaps into vector graphics [http://potrace.sourceforge.net/, [Document](http://potrace.sourceforge.net/potracelib.pdf), [Example](https://github.com/yui0/img2vec)]
 |**[fmath.h](fmath.h)** | math | 142 | public domain | Fast math library
 |**[random.h](random.h)** | math | 33 | public domain | XOR128 random function
-|**[sgemm_ocl.h](sgemm_ocl.h)** | math | 662 | public domain | Fast GEMM function for OpenCL [ref: https://github.com/yui0/ugemm]
 |**[sgemm_sse.h](sgemm_sse.h)** | math | 451 | public domain | Fast GEMM function for SSE [ref: https://github.com/yui0/ugemm]
+|**[sgemm_ocl.h](sgemm_ocl.h)** | GPGPU/math | 662 | public domain | Fast GEMM function for OpenCL [ref: https://github.com/yui0/ugemm]
 |**[gpgpu_glsl.h](gpgpu_glsl.h)** | GPGPU | 399 | public domain | GLSL frameworks [ref: https://github.com/yui0/waifu2x-glsl]
 |**[ocl.h](ocl.h)** | GPGPU | 190 | public domain | OpenCL frameworks [ref: https://github.com/yui0/waifu2x-ocl]
 |**[clock.h](clock.h)** | utils | 31 | public domain | clock function for linux [ref: https://github.com/yui0/waifu2x-glsl]
