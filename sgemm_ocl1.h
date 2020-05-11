@@ -49,17 +49,42 @@ __kernel void gemm_nt(__global float* restrict gm, const int8 _info)
 	const int globalRow = get_global_id(0); // Row ID of C (0..M)
 	const int globalCol = get_global_id(1); // Col ID of C (0..N)
 
-//	if (globalRow >= M && globalCol >= N) return;
-	if (globalRow < M && globalCol < N) {
-		// Compute a single element (loop over K)
-		float acc = 0.0f;
-		for (int k=0; k<K; k++) {
-			acc += A[k*M + globalRow] * B[globalCol + N*k];
-		}
+	if (globalRow >= M || globalCol >= N) return;
 
-		// Store the result
-		C[globalCol*M + globalRow] = acc;
+	// Compute a single element (loop over K)
+	float acc = 0.0f;
+	for (int k=0; k<K; k++) {
+		acc += A[k*M + globalRow] * B[globalCol + N*k];
 	}
+
+	// Store the result
+	C[globalCol*M + globalRow] = acc;
+}
+
+__kernel void gemm_nt_LReLU(__global float* restrict gm, const int8 _info)
+{
+	const int M = _info.s0;
+	const int N = _info.s1;
+	const int K = _info.s2;
+	__global float* restrict A = (__global float* restrict)(gm + _info.s3);
+	__global float* restrict B = (__global float* restrict)(gm + _info.s4);
+	__global float* restrict C = (__global float* restrict)(gm + _info.s5);
+
+	// Thread identifiers
+	const int globalRow = get_global_id(0); // Row ID of C (0..M)
+	const int globalCol = get_global_id(1); // Col ID of C (0..N)
+
+	if (globalRow >= M || globalCol >= N) return;
+
+	// Compute a single element (loop over K)
+	float acc = 0.0f;
+	for (int k=0; k<K; k++) {
+		acc += A[k*M + globalRow] * B[globalCol + N*k];
+	}
+
+	// Store the result with Leaky ReLU
+//	z = (float4)max(z, (float4)0.0) + (float4)min(z, (float4)0.0) * (float4)0.1;
+	C[globalCol*M + globalRow] = max(acc, 0.0) + min(acc, 0.0) * 0.1;
 }
 
 #define TRANSPOSEX 16
@@ -162,6 +187,8 @@ ocl_t _kernel[] = {
 	{ "transpose", 0, 2,{1,1,1},{TRANSPOSEX,TRANSPOSEY,1}, _args },
 
 	{ "im2col", 0, 1,{1,1,1},{16,1,1}, _args },
+
+	{ "gemm_nt_LReLU", 0, 2,{/*M*/1,/*N*/1},{TS,TS}, _args },
 };
 int _ksz = sizeof(_kernel)/sizeof(_kernel[0]);
 
@@ -217,9 +244,7 @@ static inline void sgemm_ocl(char ta, char tb, int m, int n, int k, float *a, fl
 	_kernel[0].global_size[0] = ceil_int(m, TS);
 	_kernel[0].global_size[1] = ceil_int(n, TS);
 
-//	oclKernelArgsWrite(_args);
 	oclRun(_kernel);
-//	oclKernelArgsRead(_args);
 	oclRead(_args[0].p, sizeof(float)*(mk+kn), sizeof(float)*mn, c);
 }
 void sgemm_ocl_finish()
@@ -245,46 +270,64 @@ static inline void ocl_im2col(float *inputs, int ich, int w, int h, int k, int p
 	oclWrite(_args[0].p, sizeof(float)*_info[0], sizeof(float)*w*h*ich, inputs);
 	oclRun(_kernel+2);
 	oclRead(_args[0].p, sizeof(float)*_info[7], sizeof(float)*_info[0], outputs);
-//	oclWait();
 }
 static inline void ocl_convolution(float *inputs, int ich, int w, int h, float *weights, int k, int pad, int stride, float *outputs, int ch)
 {
 	// im2col(pix, 3, h, w, 4, 4, 2, 2, 1, 1, workspace);
 	int hcol = (h + 2 * pad - k) / stride + 1;
 	int wcol = (w + 2 * pad - k) / stride + 1;
-	oclWrite(_args[0].p, 0, sizeof(float)*w*h*ich, inputs);
-	_info[0] = 0;		// inputs
-//	oclWrite(_args[0].p, sizeof(float)*wcol*hcol*ich, sizeof(float)*w*h*ich, inputs);
-//	_info[0] = wcol*hcol*ich;	// inputs
+	oclWrite(_args[0].p, sizeof(float)*wcol*hcol*ich*k*k, sizeof(float)*w*h*ich, inputs);
+	_info[0] = wcol*hcol*ich*k*k;	// inputs
 	_info[1] = ich;
 	_info[2] = h;
 	_info[3] = w;
 	_info[4] = k;
 	_info[5] = pad;
 	_info[6] = stride;
-	_info[7] = w*h*ich;	// outputs
-//	_info[7] = 0;			// outputs
-	_kernel[2].global_size[0] = ceil_int(_info[7], 16);
-//	oclKernelArgsWrite(_args);
+	_info[7] = 0;			// outputs
+	_kernel[2].global_size[0] = ceil_int(_info[0], 16);
 	oclRun(_kernel+2);
 
-/*	float *workspace = malloc(sizeof(float)*wcol*hcol*ich*k*k);
-	oclRead(_args[0].p, sizeof(float)*_info[7], sizeof(float)*wcol*hcol*ich*k*k, workspace);
-	oclWrite(_args[0].p, sizeof(float)*_info[7], sizeof(float)*wcol*hcol*ich*k*k, workspace);
-	free(workspace);*/
-//	oclWrite(_args[0].p, sizeof(float)*w*h*ich, sizeof(float)*wcol*hcol*ich*k*k, inputs);
-
 	// sgemm_ocl('N', 'T', ch, wcol*hcol, k*k, magic_kernel, workspace, pix);
-	oclWrite(_args[0].p, sizeof(float)*(w*h*ich+wcol*hcol*ich*k*k), sizeof(float)*k*k*ich*ch, weights);
+	oclWrite(_args[0].p, sizeof(float)*(wcol*hcol*ich*k*k), sizeof(float)*k*k*ich*ch, weights);
 	_info[0] = ch;
 	_info[1] = wcol*hcol /* *batch */;
 	_info[2] = k*k*ich;
-	_info[3] = w*h*ich+wcol*hcol*ich*k*k;			// a (weights)
-	_info[4] = w*h*ich;					// b (col)
-	_info[5] = w*h*ich+wcol*hcol*ich*k*k +k*k*ich*ch;	// c
+	_info[3] = wcol*hcol*ich*k*k;			// a (weights)
+	_info[4] = 0;					// b (col)
+	_info[5] = wcol*hcol*ich*k*k +k*k*ich*ch;	// c
 	_kernel[0].global_size[0] = ceil_int(_info[0], TS);
 	_kernel[0].global_size[1] = ceil_int(_info[1], TS);
-//	oclKernelArgsWrite(_args);
 	oclRun(_kernel);
+	oclRead(_args[0].p, sizeof(float)*_info[5], sizeof(float)*wcol*hcol*ch, outputs);
+}
+static inline void ocl_convolution_LReLU(float *inputs, int ich, int w, int h, float *weights, int k, int pad, int stride, float *outputs, int ch)
+{
+	// im2col(pix, 3, h, w, 4, 4, 2, 2, 1, 1, workspace);
+	int hcol = (h + 2 * pad - k) / stride + 1;
+	int wcol = (w + 2 * pad - k) / stride + 1;
+	oclWrite(_args[0].p, sizeof(float)*wcol*hcol*ich*k*k, sizeof(float)*w*h*ich, inputs);
+	_info[0] = wcol*hcol*ich*k*k;	// inputs
+	_info[1] = ich;
+	_info[2] = h;
+	_info[3] = w;
+	_info[4] = k;
+	_info[5] = pad;
+	_info[6] = stride;
+	_info[7] = 0;			// outputs
+	_kernel[2].global_size[0] = ceil_int(_info[0], 16);
+	oclRun(_kernel+2);
+
+	// sgemm_ocl('N', 'T', ch, wcol*hcol, k*k, magic_kernel, workspace, pix);
+	oclWrite(_args[0].p, sizeof(float)*(wcol*hcol*ich*k*k), sizeof(float)*k*k*ich*ch, weights);
+	_info[0] = ch;
+	_info[1] = wcol*hcol /* *batch */;
+	_info[2] = k*k*ich;
+	_info[3] = wcol*hcol*ich*k*k;			// a (weights)
+	_info[4] = 0;					// b (col)
+	_info[5] = wcol*hcol*ich*k*k +k*k*ich*ch;	// c
+	_kernel[3].global_size[0] = ceil_int(_info[0], TS);
+	_kernel[3].global_size[1] = ceil_int(_info[1], TS);
+	oclRun(_kernel+3);
 	oclRead(_args[0].p, sizeof(float)*_info[5], sizeof(float)*wcol*hcol*ch, outputs);
 }

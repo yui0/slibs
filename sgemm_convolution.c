@@ -151,6 +151,7 @@ int main(int argc, char* argv[])
 //	im2col(pix, 1, h, w, 4, 4, 1, 1, 1, 1, workspace);
 //	ocl_convolution(workspace, 1, w, h, magic_kernel, 4, 1, 1, pix, 1);
 	ocl_convolution(pix, 1, w, h, magic_kernel, 4, 1, 1, pix, 1);
+	//ocl_convolution_LReLU(pix, 1, w, h, magic_kernel, 4, 1, 1, pix, 1);
 	w -= 1;
 	h -= 1;
 
