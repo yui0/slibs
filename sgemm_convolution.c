@@ -48,7 +48,7 @@ void gemm(char ta, char tb, int M, int N, int K, float *a, float *b, float *c)
 //				sum += a[k + m*K] * b[n*K + k]; // TN
 			}
 			//Z[m + n * ldc] = alpha * sum + beta * Z[m + n * ldc];
-			c[n*M + m] = sum;
+			c[n*M + m] = sum; // Column Major
 		}
 	}
 }
@@ -79,7 +79,49 @@ static inline void im2col(const real *im, const int channels,
 	}
 }
 
-real magic_kernel[4*4] = {
+real magic_kernel[4*4 *3*3] = {
+	1/64.0, 3/64.0, 3/64.0, 1/64.0,
+	3/64.0, 9/64.0, 9/64.0, 3/64.0,
+	3/64.0, 9/64.0, 9/64.0, 3/64.0,
+	1/64.0, 3/64.0, 3/64.0, 1/64.0,
+
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+
+
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+
+	1/64.0, 3/64.0, 3/64.0, 1/64.0,
+	3/64.0, 9/64.0, 9/64.0, 3/64.0,
+	3/64.0, 9/64.0, 9/64.0, 3/64.0,
+	1/64.0, 3/64.0, 3/64.0, 1/64.0,
+
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+
+
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+
 	1/64.0, 3/64.0, 3/64.0, 1/64.0,
 	3/64.0, 9/64.0, 9/64.0, 3/64.0,
 	3/64.0, 9/64.0, 9/64.0, 3/64.0,
@@ -122,7 +164,8 @@ int main(int argc, char* argv[])
 		}
 	}
 
-	sgemm_ocl_init(platform, device, (w*h*1+w*h*1*4*4+4*4*1*1+w*h*1)*sizeof(float));
+//	sgemm_ocl_init(platform, device, (w*h*1+w*h*1*4*4+4*4*1*1+w*h*1)*sizeof(float));
+	sgemm_ocl_init(platform, device, (w*h*3+w*h*3*4*4+4*4*1*1+w*h*3)*sizeof(float));
 
 /*	real *workspace = malloc(sizeof(real)*w*h*3*4*4*3);
 //	im2col(pix, 3, h, w, 4, 4, 2, 2, 1, 1, workspace);
@@ -150,8 +193,11 @@ int main(int argc, char* argv[])
 //	real *workspace = malloc(sizeof(real)*w*h*3*4*4*3);
 //	im2col(pix, 1, h, w, 4, 4, 1, 1, 1, 1, workspace);
 //	ocl_convolution(workspace, 1, w, h, magic_kernel, 4, 1, 1, pix, 1);
-	ocl_convolution(pix, 1, w, h, magic_kernel, 4, 1, 1, pix, 1);
-	//ocl_convolution_LReLU(pix, 1, w, h, magic_kernel, 4, 1, 1, pix, 1);
+	//ocl_convolution(pix, 1, w, h, magic_kernel, 4, 1, 1, pix, 1);
+//	float bias[] = { 10 };
+//	ocl_convolution_LReLU(pix, 1, w, h, magic_kernel, 4, 1, 1, pix, 1, bias);
+	float bias[] = { 0,0,0 };
+	ocl_convolution_LReLU(pix, 3, w, h, magic_kernel, 4, 1, 1, pix, 3, bias);
 	w -= 1;
 	h -= 1;
 
@@ -159,9 +205,11 @@ int main(int argc, char* argv[])
 
 	for (int sy=0; sy<h; sy++) {
 		for (int sx=0; sx<w; sx++) {
-			pixels[(w*sy+sx)*3  ] = pix[(w*sy+sx)  ] *255.0;
-			pixels[(w*sy+sx)*3+1] = pix[(w*sy+sx)  ] *255.0;
-			pixels[(w*sy+sx)*3+2] = pix[(w*sy+sx)  ] *255.0;
+			pixels[(w*sy+sx)*3  ] = pix[(w*sy+sx)] *255.0;
+//			pixels[(w*sy+sx)*3+1] = pix[(w*sy+sx)] *255.0;
+//			pixels[(w*sy+sx)*3+2] = pix[(w*sy+sx)] *255.0;
+			pixels[(w*sy+sx)*3+1] = pix[(w*sy+sx)+w*h  ] *255.0;
+			pixels[(w*sy+sx)*3+2] = pix[(w*sy+sx)+w*h*2] *255.0;
 		}
 	}
 	stbi_write_jpg(outfile, w, h, 3, pixels, 0);

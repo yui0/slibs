@@ -11,7 +11,7 @@
 
 char sgemm_kcode[] = OCLSTRINGIFY(
 
-__kernel void gemm_nn(__global float* restrict gm, const int8 _info)
+__kernel void gemm_cnn(__global float* restrict gm, const int8 _info)
 {
 	const int M = _info.s0;
 	const int N = _info.s1;
@@ -36,7 +36,7 @@ __kernel void gemm_nn(__global float* restrict gm, const int8 _info)
 	}
 }
 
-__kernel void gemm_nt(__global float* restrict gm, const int8 _info)
+__kernel void gemm_cnt(__global float* restrict gm, const int8 _info)
 {
 	const int M = _info.s0;
 	const int N = _info.s1;
@@ -61,7 +61,7 @@ __kernel void gemm_nt(__global float* restrict gm, const int8 _info)
 	C[globalCol*M + globalRow] = acc;
 }
 
-__kernel void gemm_nt_LReLU(__global float* restrict gm, const int8 _info)
+__kernel void gemm_rnn_LReLU(__global float* restrict gm, const int8 _info)
 {
 	const int M = _info.s0;
 	const int N = _info.s1;
@@ -69,6 +69,7 @@ __kernel void gemm_nt_LReLU(__global float* restrict gm, const int8 _info)
 	__global float* restrict A = (__global float* restrict)(gm + _info.s3);
 	__global float* restrict B = (__global float* restrict)(gm + _info.s4);
 	__global float* restrict C = (__global float* restrict)(gm + _info.s5);
+	__global float* restrict bias = (__global float* restrict)(gm + _info.s6);
 
 	// Thread identifiers
 	const int globalRow = get_global_id(0); // Row ID of C (0..M)
@@ -79,12 +80,14 @@ __kernel void gemm_nt_LReLU(__global float* restrict gm, const int8 _info)
 	// Compute a single element (loop over K)
 	float acc = 0.0f;
 	for (int k=0; k<K; k++) {
-		acc += A[k*M + globalRow] * B[globalCol + N*k];
+//		acc += A[k*M + globalRow] * B[globalCol + N*k];
+		acc += A[k + globalRow*K] * B[globalCol + N*k]; // RNN
 	}
 
 	// Store the result with Leaky ReLU
 //	z = (float4)max(z, (float4)0.0) + (float4)min(z, (float4)0.0) * (float4)0.1;
-	C[globalCol*M + globalRow] = max(acc, 0.0) + min(acc, 0.0) * 0.1;
+//	C[globalCol*M + globalRow] = max(acc, 0.0) + min(acc, 0.0) * 0.1;
+	C[globalCol + globalRow*N] = max(acc, 0.0) + min(acc, 0.0) * 0.1 + bias[globalRow]; // Row major
 }
 
 #define TRANSPOSEX 16
@@ -180,15 +183,15 @@ args_t _args[] = {
 ocl_t _kernel[] = {
 	// global: m*MDIMC/MWG, n*NDIMC/NWG
 //	{ "gemm_fast", 0, 2,{1,1,1},{MDIMC,NDIMC,1}, _args },
-//	{ "gemm_nn", 0, 2,{/*M*/1,/*N*/1},{TS,TS}, _args },
-	{ "gemm_nt", 0, 2,{/*M*/1,/*N*/1},{TS,TS}, _args },
+//	{ "gemm_cnn", 0, 2,{/*M*/1,/*N*/1},{TS,TS}, _args },
+	{ "gemm_cnt", 0, 2,{/*M*/1,/*N*/1},{TS,TS}, _args },
 
 	// global: k, n
 	{ "transpose", 0, 2,{1,1,1},{TRANSPOSEX,TRANSPOSEY,1}, _args },
 
 	{ "im2col", 0, 1,{1,1,1},{16,1,1}, _args },
 
-	{ "gemm_nt_LReLU", 0, 2,{/*M*/1,/*N*/1},{TS,TS}, _args },
+	{ "gemm_rnn_LReLU", 0, 2,{/*M*/1,/*N*/1},{TS,TS}, _args },
 };
 int _ksz = sizeof(_kernel)/sizeof(_kernel[0]);
 
@@ -301,12 +304,11 @@ static inline void ocl_convolution(float *inputs, int ich, int w, int h, float *
 	oclRun(_kernel);
 	oclRead(_args[0].p, sizeof(float)*_info[5], sizeof(float)*wcol*hcol*ch, outputs);
 }
-static inline void ocl_convolution_LReLU(float *inputs, int ich, int w, int h, float *weights, int k, int pad, int stride, float *outputs, int ch)
+static inline void ocl_convolution_LReLU(float *inputs, int ich, int w, int h, float *weights, int k, int pad, int stride, float *outputs, int ch, float *bias)
 {
 	// im2col(pix, 3, h, w, 4, 4, 2, 2, 1, 1, workspace);
 	int hcol = (h + 2 * pad - k) / stride + 1;
 	int wcol = (w + 2 * pad - k) / stride + 1;
-	oclWrite(_args[0].p, sizeof(float)*wcol*hcol*ich*k*k, sizeof(float)*w*h*ich, inputs);
 	_info[0] = wcol*hcol*ich*k*k;	// inputs
 	_info[1] = ich;
 	_info[2] = h;
@@ -316,18 +318,21 @@ static inline void ocl_convolution_LReLU(float *inputs, int ich, int w, int h, f
 	_info[6] = stride;
 	_info[7] = 0;			// outputs
 	_kernel[2].global_size[0] = ceil_int(_info[0], 16);
+	oclWrite(_args[0].p, sizeof(float)*_info[0], sizeof(float)*w*h*ich, inputs);
 	oclRun(_kernel+2);
 
 	// sgemm_ocl('N', 'T', ch, wcol*hcol, k*k, magic_kernel, workspace, pix);
-	oclWrite(_args[0].p, sizeof(float)*(wcol*hcol*ich*k*k), sizeof(float)*k*k*ich*ch, weights);
 	_info[0] = ch;
 	_info[1] = wcol*hcol /* *batch */;
 	_info[2] = k*k*ich;
 	_info[3] = wcol*hcol*ich*k*k;			// a (weights)
 	_info[4] = 0;					// b (col)
 	_info[5] = wcol*hcol*ich*k*k +k*k*ich*ch;	// c
+	_info[6] = _info[5] + wcol*hcol*ch;
 	_kernel[3].global_size[0] = ceil_int(_info[0], TS);
 	_kernel[3].global_size[1] = ceil_int(_info[1], TS);
+	oclWrite(_args[0].p, sizeof(float)*_info[3], sizeof(float)*k*k*ich*ch, weights);
+	oclWrite(_args[0].p, sizeof(float)*_info[6], sizeof(float)*ch, bias);
 	oclRun(_kernel+3);
 	oclRead(_args[0].p, sizeof(float)*_info[5], sizeof(float)*wcol*hcol*ch, outputs);
 }
