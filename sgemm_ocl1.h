@@ -195,10 +195,11 @@ ocl_t _kernel[] = {
 };
 int _ksz = sizeof(_kernel)/sizeof(_kernel[0]);
 
-void sgemm_ocl_init(int platform, int device, int size)
+void sgemm_ocl_init(int platform, int device, size_t size)
 {
 //	_args[0].s = _mat = malloc(size);
 	_args[0].size = size;
+//	printf("sgemm_ocl_init: %lu\n", size);
 
 	oclSetup(platform, device);
 	oclKernel(_kernel, _ksz, "-cl-denorms-are-zero -cl-finite-math-only -cl-fast-relaxed-math -Werror", sgemm_kcode);
@@ -318,6 +319,7 @@ static inline void ocl_convolution_LReLU(float *inputs, int ich, int w, int h, f
 	_info[6] = stride;
 	_info[7] = 0;			// outputs
 	_kernel[2].global_size[0] = ceil_int(_info[0], 16);
+//	printf("clEnqueueWriteBuffer: %lu %lu\n", sizeof(float)*_info[0], sizeof(float)*w*h*ich);
 	oclWrite(_args[0].p, sizeof(float)*_info[0], sizeof(float)*w*h*ich, inputs);
 	oclRun(_kernel+2);
 
@@ -331,8 +333,11 @@ static inline void ocl_convolution_LReLU(float *inputs, int ich, int w, int h, f
 	_info[6] = _info[5] + wcol*hcol*ch;
 	_kernel[3].global_size[0] = ceil_int(_info[0], TS);
 	_kernel[3].global_size[1] = ceil_int(_info[1], TS);
+//	printf("clEnqueueWriteBuffer: %lu %lu\n", sizeof(float)*_info[3], sizeof(float)*k*k*ich*ch);
 	oclWrite(_args[0].p, sizeof(float)*_info[3], sizeof(float)*k*k*ich*ch, weights);
+//	printf("clEnqueueWriteBuffer: %lu %lu\n", sizeof(float)*_info[6], sizeof(float)*ch);
 	oclWrite(_args[0].p, sizeof(float)*_info[6], sizeof(float)*ch, bias);
 	oclRun(_kernel+3);
+//	printf("clEnqueueReadBuffer: %lu %lu\n", sizeof(float)*_info[5], sizeof(float)*wcol*hcol*ch);
 	oclRead(_args[0].p, sizeof(float)*_info[5], sizeof(float)*wcol*hcol*ch, outputs);
 }

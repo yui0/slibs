@@ -4,6 +4,9 @@
 //		©2016-2020 Yuichiro Nakada
 //---------------------------------------------------------
 
+#ifndef OCL_H_INCLUDED
+#define OCL_H_INCLUDED
+
 #include <stdio.h>
 #include <string.h>
 
@@ -95,7 +98,7 @@ static void __checkOclErrors(const cl_int err, const char* const func, const cha
 
 typedef struct {
 	int type;
-	int size;
+	size_t size;
 	cl_mem p;	// device memory
 	void *s;	// cpu memory
 	int flag;
@@ -288,7 +291,7 @@ static inline void oclRun(ocl_t *kernel)
 	args_t *args = kernel->a;
 	while (args->size) {
 #ifdef _DEBUG
-		printf("clSetKernelArg[%d]: size %d %x\n", n, /*sizeof(cl_mem), (unsigned int)args->p,*/ args->size, (unsigned int)args->s);
+		printf("clSetKernelArg[%d]: size %lu %x\n", n, /*sizeof(cl_mem), (unsigned int)args->p,*/ args->size, (unsigned int)args->s);
 #endif
 		if (args->type>0) checkOcl(clSetKernelArg(kernel->k, n++, sizeof(cl_mem), (void*)&args->p));
 		else checkOcl(clSetKernelArg(kernel->k, n++, args->size, (void*)args->s));
@@ -340,3 +343,5 @@ void oclFinish()
 	clReleaseCommandQueue(command_queue);
 	clReleaseContext(ocl_context);
 }
+
+#endif /* OCL_H_INCLUDED */
