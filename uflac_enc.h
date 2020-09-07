@@ -6,6 +6,10 @@
  *
  * */
 
+#ifndef UINT32_MAX
+#define UINT32_MAX	4294967295
+#endif
+
 /**
  * Flake: FLAC audio encoder
  * Copyright (c) 2006 Justin Ruggles
@@ -343,7 +347,7 @@ bitwriter_init(BitWriter *bw, void *buf, int len)
 		len = 0;
 		buf = NULL;
 	}
-	bw->buffer = buf;
+	bw->buffer = (uint8_t*)buf;
 	bw->buf_end = bw->buffer + len;
 	bw->buf_ptr = bw->buffer;
 	bw->bit_left = 32;
@@ -554,7 +558,7 @@ compute_autocorr(const int32_t *data, int len, int lag, double *autoc)
 	double *data1;
 	double temp, temp2;
 
-	data1 = malloc((len+16) * sizeof(double));
+	data1 = (double*)malloc((len+16) * sizeof(double));
 	apply_welch_window(data, len, data1);
 	data1[len] = 0;
 
@@ -825,7 +829,7 @@ body(MD5Context *ctx, const void *data, uint32_t size)
 	uint32_t a, b, c, d;
 	uint32_t saved_a, saved_b, saved_c, saved_d;
 
-	ptr = data;
+	ptr = (uint8_t*)data;
 
 	a = ctx->a;
 	b = ctx->b;
@@ -1165,7 +1169,7 @@ calc_rice_params(RiceContext *rc, int pmin, int pmax, int32_t *data, int n,
 	assert(pmax >= 0 && pmax <= MAX_PARTITION_ORDER);
 	assert(pmin <= pmax);
 
-	udata = malloc(n * sizeof(uint32_t));
+	udata = (uint32_t*)malloc(n * sizeof(uint32_t));
 	for (i=0; i<n; i++) {
 		udata[i] = (2*data[i]) ^ (data[i]>>31);
 	}
@@ -2011,7 +2015,7 @@ flake_encode_init(FlakeContext *s)
 	}
 
 	// allocate memory
-	ctx = calloc(1, sizeof(FlacEncodeContext));
+	ctx = (FlacEncodeContext*)calloc(1, sizeof(FlacEncodeContext));
 	s->private_ctx = ctx;
 
 	if (flake_validate_params(s) < 0) {
@@ -2098,8 +2102,8 @@ flake_encode_init(FlakeContext *s)
 	s->max_frame_size = ctx->max_frame_size;
 
 	// output header bytes
-	ctx->bw = calloc(sizeof(BitWriter), 1);
-	s->header = calloc(ctx->params.padding_size + 1024, 1);
+	ctx->bw = (BitWriter*)calloc(sizeof(BitWriter), 1);
+	s->header = (unsigned char*)calloc(ctx->params.padding_size + 1024, 1);
 	header_len = -1;
 	if (s->header != NULL) {
 		header_len = write_headers(ctx, s->header);
@@ -2824,7 +2828,8 @@ int uflac_encode(char *name, void *data, int len, int sampleRate, int sampleDept
 	}
 	fwrite(s.header, 1, header_size, fp);
 
-	uint8_t frame[s.max_frame_size];
+//	uint8_t frame[s.max_frame_size];
+	uint8_t *frame = (uint8_t*)malloc(s.max_frame_size);
 	uint8_t *pcm = data;
 	for (int n=len; n>-s.params.block_size; n-=s.params.block_size) {
 		int fs = flake_encode_frame(&s, frame, (short*)pcm);
@@ -2836,6 +2841,7 @@ int uflac_encode(char *name, void *data, int len, int sampleRate, int sampleDept
 		}
 //		printf(".");
 	}
+	free(frame);
 	flake_encode_close(&s);
 	fclose(fp);
 
