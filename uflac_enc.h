@@ -1,5 +1,5 @@
 /* public domain Simple, Minimalistic, FLAC encoder based on Flake
- *	©2018 Yuichiro Nakada
+ *	©2018-2020 Yuichiro Nakada
  *
  * Basic usage:
  *	uflac_encode("music.flac", pcm, len, 44100, 16, 2, 9);
@@ -1758,7 +1758,7 @@ select_blocksize(int samplerate, int time_ms)
 
 	blocksize = flac_blocksizes[1];
 	target = (samplerate * time_ms) / 1000;
-	for (i=0; i<16; i++) {
+	for (i=0; i<15/*FIXME:16*/; i++) {
 		if (target >= flac_blocksizes[i] && flac_blocksizes[i] > blocksize) {
 			blocksize = flac_blocksizes[i];
 		}
