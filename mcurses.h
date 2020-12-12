@@ -2,22 +2,62 @@
  *	©2020 Yuichiro Nakada
  *
  * Basic usage:
- *	setFunction_putchar(putchar);
+ *	setFunction_putchar((void (*)(uint8_t ch))putchar);
  *	initscr();
  *	move(11, 15);
  *	addstr("Hello, World");
  *
  * */
 
-//return the length of result string. support only 10 radix for easy use and better performance
+#include <termios.h>
+#include <stdio.h>
+static struct termios t_old, t_new;
+/* Initialize new terminal i/o settings */
+void initTermios(int echo)
+{
+	tcgetattr(0, &t_old); /* grab old terminal i/o settings */
+	t_new = t_old; /* make new settings same as old settings */
+	t_new.c_lflag &= ~ICANON; /* disable buffered i/o */
+	if (echo) {
+		t_new.c_lflag |= ECHO; /* set echo mode */
+	} else {
+		t_new.c_lflag &= ~ECHO; /* set no echo mode */
+	}
+	tcsetattr(0, TCSANOW, &t_new); /* use these new terminal i/o settings now */
+}
+/* Restore old terminal i/o settings */
+void resetTermios(void)
+{
+	tcsetattr(0, TCSANOW, &t_old);
+}
+/* Read 1 character - echo defines echo mode */
+char getch_(int echo)
+{
+	char ch;
+	initTermios(echo);
+	ch = getchar();
+	resetTermios();
+	return ch;
+}
+/* Read 1 character without echo */
+char _getch(void)
+{
+	return getch_(0);
+}
+/* Read 1 character with echo */
+char _getche(void)
+{
+	return getch_(1);
+}
+
+// return the length of result string. support only 10 radix for easy use and better performance
 int itoa(int val, char* buf, unsigned int radix)
 {
 	//const unsigned int radix = 10;
-
 	char* p;
-	unsigned int a;        //every digit
+	unsigned int a;	// every digit
 	int len;
-	char* b;            //start of the digit char
+	char* b;	// start of the digit char
 	char temp;
 	unsigned int u;
 
@@ -43,7 +83,7 @@ int itoa(int val, char* buf, unsigned int radix)
 
 	*p-- = 0;
 
-	//swap
+	// swap
 	do {
 		temp = *p;
 		*p = *b;
