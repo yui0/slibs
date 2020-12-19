@@ -20,6 +20,7 @@ Single file libraries for C/C++.
 |**[sgemm_sse.h](sgemm_sse.h)** | math | 451 | public domain | Fast GEMM function for SSE [ref: https://github.com/yui0/ugemm]
 |**[sgemm_ocl.h](sgemm_ocl.h)** | GPGPU/math | 662 | public domain | Fast GEMM function for OpenCL [ref: https://github.com/yui0/ugemm]
 |**[gpgpu_glsl.h](gpgpu_glsl.h)** | GPGPU | 399 | public domain | GLSL frameworks [ref: https://github.com/yui0/waifu2x-glsl]
+|**[gpgpu_gl4.h](gpgpu_gl4.h)** | GPGPU | 170 | public domain | OpenGL compute shader frameworks [ref: https://github.com/yui0/waifu2x-glsl]
 |**[ocl.h](ocl.h)** | GPGPU | 190 | public domain | OpenCL frameworks [ref: https://github.com/yui0/waifu2x-ocl]
 |**[clock.h](clock.h)** | utils | 31 | public domain | clock function for linux [ref: https://github.com/yui0/waifu2x-glsl]
 |**[kbhit.h](kbhit.h)** | utils | 64 | public domain | kbhit function for linux [ref: https://github.com/yui0/aplay-]

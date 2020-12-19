@@ -10,28 +10,24 @@
  * */
 
 #include <termios.h>
-#include <stdio.h>
 static struct termios t_old, t_new;
-/* Initialize new terminal i/o settings */
 void initTermios(int echo)
 {
-	tcgetattr(0, &t_old); /* grab old terminal i/o settings */
-	t_new = t_old; /* make new settings same as old settings */
-	t_new.c_lflag &= ~ICANON; /* disable buffered i/o */
+	tcgetattr(0, &t_old);
+	t_new = t_old;
+	t_new.c_lflag &= ~ICANON; // disable buffered i/o
 	if (echo) {
-		t_new.c_lflag |= ECHO; /* set echo mode */
+		t_new.c_lflag |= ECHO; // set echo mode
 	} else {
-		t_new.c_lflag &= ~ECHO; /* set no echo mode */
+		t_new.c_lflag &= ~ECHO; // set no echo mode
 	}
-	tcsetattr(0, TCSANOW, &t_new); /* use these new terminal i/o settings now */
+	tcsetattr(0, TCSANOW, &t_new);
 }
-/* Restore old terminal i/o settings */
-void resetTermios(void)
+void resetTermios()
 {
 	tcsetattr(0, TCSANOW, &t_old);
 }
-/* Read 1 character - echo defines echo mode */
-char getch_(int echo)
+int getch_(int echo)
 {
 	char ch;
 	initTermios(echo);
@@ -39,13 +35,13 @@ char getch_(int echo)
 	resetTermios();
 	return ch;
 }
-/* Read 1 character without echo */
-char _getch(void)
+// Read 1 character without echo
+int _getch()
 {
 	return getch_(0);
 }
-/* Read 1 character with echo */
-char _getche(void)
+// Read 1 character with echo
+int _getche()
 {
 	return getch_(1);
 }
