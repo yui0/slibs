@@ -93,7 +93,7 @@ GLuint uniform_params;
 GLuint ssbo[3];
 void coCreateBuffer(GLuint program, int *size, int num)
 {
-	uniform_params = glGetUniformLocation(program, "params");
+	uniform_params = glGetUniformLocation(program, "param");
 	glGenBuffers(3, ssbo);
 	for (int i=0; i<num; i++) {
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo[i]);

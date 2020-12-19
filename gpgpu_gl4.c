@@ -7,13 +7,13 @@
 // clang -Os gpgpu_gl4.c -o gpgpu_gl4 `pkg-config --libs --cflags gl egl gbm` -lglfw
 // clang -Os gpgpu_gl4.c -o gpgpu_gl4 `pkg-config --libs --cflags glesv2 egl gbm` -lglfw
 // dnf install mesa-libgbm-devel libdrm-devel mesa-libGL-devel mesa-libGLU-devel mesa-libEGL-devel mesa-libGLES-devel glfw-
-#include "gpgpu_gl.h"
+#include "gpgpu_gl4.h"
 
 const char compute_shader_source[] = STRINGIFY(
 
 \n#version 430\n
 
-uniform int params[16];
+uniform int param[16];
 
 layout(std430, binding = 0) buffer layout_dst
 {
@@ -25,9 +25,9 @@ layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 void main() {
     uint index = gl_GlobalInvocationID.x;
     //dst[index] = index;
-    if (index >= params[0]) return;
+    if (index >= param[0]) return;
 
-    dst[index] = mix(0.0, 3.141592653589, float(index) / params[0]);
+    dst[index] = mix(0.0, 3.141592653589, float(index) / param[0]);
 }
 
 );
