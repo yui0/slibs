@@ -40,7 +40,7 @@ void compute()
 
 	// create buffer
 	int size[] = {num * sizeof(float)};
-	coCreateBuffer(shader_program, size, 1);
+	coCreateBuffer(size, 1);
 
 	int param[16];
 	param[0] = num;

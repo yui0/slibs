@@ -89,12 +89,16 @@ void coDeleteProgram(GLuint program)
 	glDeleteProgram(program);
 }
 
-GLuint uniform_params;
-GLuint ssbo[3];
-void coCreateBuffer(GLuint program, int *size, int num)
+/*GLuint uniform_params[10];
+void coCreateParam(int n, GLuint program)
 {
-	uniform_params = glGetUniformLocation(program, "param");
-	glGenBuffers(3, ssbo);
+	uniform_params[n] = glGetUniformLocation(program, "param");
+}*/
+GLuint ssbo[10], ssbo_num;
+void coCreateBuffer(int *size, int num)
+{
+	ssbo_num = num;
+	glGenBuffers(ssbo_num, ssbo);
 	for (int i=0; i<num; i++) {
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo[i]);
 		glBufferData(GL_SHADER_STORAGE_BUFFER, size[i], 0, GL_DYNAMIC_COPY);
@@ -103,12 +107,13 @@ void coCreateBuffer(GLuint program, int *size, int num)
 }
 void coDeleteBuffer()
 {
-	glDeleteBuffers(3, ssbo);
+	glDeleteBuffers(ssbo_num, ssbo);
 }
 void coRun(GLuint program, int x, int y, int z, int *param)
 {
 	glUseProgram(program);
 
+	GLuint uniform_params = glGetUniformLocation(program, "param");
 	glUniform1iv(uniform_params, 16, param);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo[0]);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo[1]);
