@@ -19,7 +19,7 @@ void imgp_gray(uint8_t *s, int sx, int sy, int stride, uint8_t *p, int gstride)
 {
 	for (int y=0; y<sy; y++) {
 		for (int x=0; x<sx; x++) {
-			p[x] = 0.3 * s[x*3+0] + 0.59 * s[x*3+1] + 0.11*s[x*3+2];
+			p[x] = (uint8_t)(0.3 * s[x*3+0] + 0.59 * s[x*3+1] + 0.11*s[x*3+2]);
 		}
 
 		s += stride*3;
@@ -137,7 +137,9 @@ void imgp_reverse(uint8_t *s, int w, int h, uint8_t *p)
 }
 
 #ifdef STBIR_INCLUDE_STB_IMAGE_RESIZE_H
+#ifndef AHASH_SIZE
 #define AHASH_SIZE	16
+#endif
 void imgp_ahash(uint8_t *s, int w, int h, uint8_t *ahash)
 {
 	uint8_t resize[AHASH_SIZE*AHASH_SIZE];
@@ -160,6 +162,34 @@ void imgp_ahash(uint8_t *s, int w, int h, uint8_t *ahash)
 		printf("%02x", ahash[i]);
 	}
 	printf("\n");*/
+}
+#ifdef STBI_INCLUDE_STB_IMAGE_H
+uint8_t *imgp_get_ahash(char *name)
+{
+	int w, h, bpp;
+	uint8_t *pixels = stbi_load(name, &w, &h, &bpp, 3);
+	assert(pixels);
+
+	uint8_t *gray = malloc(w*h+AHASH_SIZE*AHASH_SIZE);
+	imgp_gray(pixels, w, h, w, gray, w);
+
+	uint8_t *ahash = malloc(AHASH_SIZE*AHASH_SIZE/8);
+	imgp_ahash(gray, w, h, ahash);
+
+	free(gray);
+	stbi_image_free(pixels);
+
+	return ahash;
+}
+#endif
+int imgp_get_distance(uint8_t *ahash1, uint8_t *ahash2)
+{
+	int d = 0;
+	for (int i=0; i<AHASH_SIZE*AHASH_SIZE; i++) {
+		int k = 1<<(i%8);
+		if ((ahash1[i/8] & k) != (ahash2[i/8] & k)) d++;
+	}
+	return d;
 }
 #endif
 
@@ -193,9 +223,9 @@ void imgp_filter(uint8_t *im, int w, int h, uint8_t *o, double *K, int Ks, doubl
 			r = (r>255.0) ? 255.0 : ((r<0.0) ? 0.0 : r);
 			g = (g>255.0) ? 255.0 : ((g<0.0) ? 0.0 : g);
 			b = (b>255.0) ? 255.0 : ((b<0.0) ? 0.0 : b);
-			o[(ix + iy*w)*3] = r;
-			o[(ix + iy*w)*3 +1] = g;
-			o[(ix + iy*w)*3 +2] = b;
+			o[(ix + iy*w)*3] = (uint8_t)r;
+			o[(ix + iy*w)*3 +1] = (uint8_t)g;
+			o[(ix + iy*w)*3 +2] = (uint8_t)b;
 		}
 	}
 }

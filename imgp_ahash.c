@@ -1,5 +1,6 @@
 // Average Hash
 // clang -Os -o imgp_ahash imgp_ahash.c -lm
+// ./imgp_ahash 01.jpg 02.jpg
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -11,25 +12,23 @@
 
 int main(int argc, char* argv[])
 {
-	char *name = argv[1];
-
-	uint8_t *pixels;
-	int w, h, bpp;
-	pixels = stbi_load(name, &w, &h, &bpp, 3);
-	assert(pixels);
-
-	uint8_t *gray = malloc(w*h+AHASH_SIZE*AHASH_SIZE);
-	imgp_gray(pixels, w, h, w, gray, w);
-	//stbi_write_jpg("gray.jpg", w, h, 1, gray, 0);
-
-	uint8_t ahash[AHASH_SIZE*AHASH_SIZE/8];
-	imgp_ahash(gray, w, h, ahash);
-
+	uint8_t *ahash = imgp_get_ahash(argv[1]);
 	for (int i=0; i<AHASH_SIZE*AHASH_SIZE/8; i++) {
 		printf("%02x", ahash[i]);
 	}
 	printf("\n");
 
-	free(gray);
-	stbi_image_free(pixels);
+	if (argc>2) {
+		uint8_t *ahash2 = imgp_get_ahash(argv[2]);
+		for (int i=0; i<AHASH_SIZE*AHASH_SIZE/8; i++) {
+			printf("%02x", ahash2[i]);
+		}
+		printf("\n");
+
+		int d = imgp_get_distance(ahash, ahash2);
+		printf("distance: %d\n", d);
+		free(ahash2);
+	}
+
+	free(ahash);
 }
