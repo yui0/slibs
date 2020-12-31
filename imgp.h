@@ -8,10 +8,12 @@
  *	imgp_reverse(diff, w, h, contour);		// only 8bit
  *
  *	uint8_t ahash[AHASH_SIZE*AHASH_SIZE/8];
- *	imgp_ahash(gray, w, h, ahash);		// only 8bit
+ *	imgp_ahash(gray, w, h, ahash);			// only 8bit
+ *	uint8_t *a = imgp_get_ahash(filename);
+ *	int d = imgp_get_distance(ahash1, ahash2);
  *
  *	imgp_filter(in, w, h, out, kernel, kernel_size, divisor, offset);	// only 24bit
- *	imgp_color_quant(pixels, w, h, color);	// only 24bit
+ *	imgp_color_quant(pixels, w, h, color);		// only 24bit
  *	imgp_cq24to15(pixels, w, h, 3, pixels, 1);
  * */
 
@@ -192,6 +194,57 @@ int imgp_get_distance(uint8_t *ahash1, uint8_t *ahash2)
 	return d;
 }
 #endif
+
+// Symmetric Nearest Neighbor
+double delta(int rc, int gc, int bc, int r, int g, int b)
+{
+	return sqrt((rc-r)*(rc-r) + (gc-g)*(gc-g) + (bc-b)*(bc-b));
+}
+void imgp_filter_snn(uint8_t *src, int w, int h, uint8_t *o, int radius)
+{
+	for (int y=0; y<h; y++) {
+		for (int x=0; x<w; x++) {
+			int xyPos = w*y + x;
+			int sumR = 0;
+			int sumG = 0;
+			int sumB = 0;
+			int cnt = 0;
+			int rc = src[xyPos*3];
+			int gc = src[xyPos*3+1];
+			int bc = src[xyPos*3+2];
+			for (int v=-radius; v<=radius; v++) {
+				for (int u=-radius; u<=radius; u++,cnt++) {
+					int uvPos = w*v + u;
+
+					int pos = xyPos + uvPos;
+					if (pos<0 || pos>=w*h) continue;
+					int pos2 = xyPos - uvPos;
+					if (pos2<0 || pos2>=w*h) continue;
+
+					int r1 = src[(xyPos + uvPos)*3  ];
+					int g1 = src[(xyPos + uvPos)*3+1];
+					int b1 = src[(xyPos + uvPos)*3+2];
+					int r2 = src[(xyPos - uvPos)*3  ];
+					int g2 = src[(xyPos - uvPos)*3+1];
+					int b2 = src[(xyPos - uvPos)*3+2];
+
+					if (delta(rc, gc, bc, r1, g1, b1) < delta(rc, gc, bc, r2, g2, b2)) {
+						sumR += r1;
+						sumG += g1;
+						sumB += b1;
+					} else {
+						sumR += r2;
+						sumG += g2;
+						sumB += b2;
+					}
+				}
+			}
+			o[xyPos*3  ] = sumR/cnt;
+			o[xyPos*3+1] = sumG/cnt;
+			o[xyPos*3+2] = sumB/cnt;
+		}
+	}
+}
 
 /*double magic_kernel[4*4] = {
 	1/64.0, 3/64.0, 3/64.0, 1/64.0,
