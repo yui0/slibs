@@ -15,6 +15,8 @@ Single file libraries for C/C++.
 |**[jo_mpeg.h](jo_mpeg.h)** | video | 317 | public domain | MPEG1/2 encoder [http://www.jonolick.com/home/mpeg-video-writer]
 |**[imgp.h](imgp.h)** | image | 441 | public domain | mini image processing library
 |**[potracelib.h](potracelib.h)** | image | 2466 | GPL | Transforming bitmaps into vector graphics [http://potrace.sourceforge.net/, [Document](http://potrace.sourceforge.net/potracelib.pdf), [Example](https://github.com/yui0/img2vec)]
+|**[fft.h](fft.h)** | math | 2244 | public domain | Fast Fourier Transform
+|**[ifft.h](fft.h)** | math | 19875 | public domain | Fixed-point in-place Fast Fourier Transform
 |**[fmath.h](fmath.h)** | math | 142 | public domain | Fast math library
 |**[random.h](random.h)** | math | 33 | public domain | XOR128 random function
 |**[sgemm_sse.h](sgemm_sse.h)** | math | 451 | public domain | Fast GEMM function for SSE [ref: https://github.com/yui0/ugemm]
