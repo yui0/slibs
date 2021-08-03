@@ -31,6 +31,7 @@ Single file libraries for C/C++.
 |**[kbhit.h](kbhit.h)** | utils | 64 | public domain | kbhit function for linux [ref: https://github.com/yui0/aplay-]
 |**[ls.h](ls.h)** | utils | 155 | public domain | making list of files and directories [ref: https://github.com/yui0/aplay-]
 |**[mcurses.h](mcurses.h)** | utils | 1481 | GPL-2 | "[mcurses](https://github.com/ChrisMicro/mcurses)" is a minimized version of programming library ncurses [ref: https://github.com/yui0/aplay-]
+|**[csv.h](csv.h)** | utils | 77 | public domain | CSV file parser
 |**[ini.h](ini.h)** | utils | 250 | BSD | ini file parser
 |**[parg.h](parg.h)** | utils | 551 | CC0 | Parser for argv that works similarly to getopt [https://github.com/jibsen/parg]
 |**[parson.h](parson.h)** | utils | 2239 | MIT | Lightweight JSON library [https://github.com/kgabis/parson]
