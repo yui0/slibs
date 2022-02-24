@@ -35,6 +35,7 @@ Single file libraries for C/C++.
 |**[ini.h](ini.h)** | utils | 250 | BSD | ini file parser
 |**[parg.h](parg.h)** | utils | 551 | CC0 | Parser for argv that works similarly to getopt [https://github.com/jibsen/parg]
 |**[parson.h](parson.h)** | utils | 2239 | MIT | Lightweight JSON library [https://github.com/kgabis/parson]
+|**[termbox.h](termbox.h)** | utils | 1719 | MIT | Library for writing text-based user interfaces [https://github.com/nsf/termbox]
 
 ## References
 - [A single-header ANSI C gui library](https://github.com/vurtun/nuklear)
