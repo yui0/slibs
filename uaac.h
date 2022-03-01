@@ -1,5 +1,5 @@
 /* RPSL Simple, Minimalistic, AAC decoder
- *	©2018 Yuichiro Nakada
+ *	©2018-2022 Yuichiro Nakada
  *
  * Basic usage:
  *	file_data = uaac_extract_aac(fd, &bytes_left, &samplerate, &channels);
@@ -14,6 +14,11 @@
  *
  *	int r = AACDecode(aac, &file_data, &bytes_left, sample_buf);
  * */
+
+#ifndef uint16_t
+//typedef unsigned short int uint16_t;
+#include <stdint.h>
+#endif
 
 
 /* ***** BEGIN LICENSE BLOCK *****
