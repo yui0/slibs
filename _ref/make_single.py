@@ -1,0 +1,55 @@
+#! /usr/bin/python
+# -*- coding: utf-8 -*-
+
+# python3 make_single.py .
+
+import re
+import os
+import sys
+import glob
+
+path = sys.argv[1]
+files = glob.glob(path + '/*.[ch]')
+#print(files)
+
+pattern = '(?<=include ").*(?=")'
+d = {}
+for p in files:
+    with open(p) as f:
+        list = []
+        for i, line in enumerate(f):
+            if '#include "' in line:
+                #break
+                #print(line)
+                result = re.search(pattern, line.strip()).group()
+                list.append(result)
+        d[os.path.basename(p)] = list
+
+print('Dependencies: ')
+print(d)
+
+order = []
+for k, v in d.items():
+    if len(v) == 0: # dependencies is 0
+        if k not in order: order.append(k)
+        continue
+
+for k2, v2 in d.items():
+    for k, v in d.items():
+        flag = 0
+        for l in v:
+            if l in order: flag = flag + 1
+        if len(v) == flag:
+            if k not in order: order.append(k)
+
+print(order)
+
+with open('/tmp/merged.h', 'w') as f_new:
+    #for f in files:
+    for f in order:
+        f_new.write('// '+os.path.basename(f)+'\n')
+        with open(f, 'r') as f_org:
+            lines = f_org.readlines()
+            for id, line in enumerate(lines):
+                if '#include "' in line: lines[id] = '// '+line
+            f_new.writelines(lines)
