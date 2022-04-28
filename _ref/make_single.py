@@ -1,5 +1,6 @@
 #! /usr/bin/python
 # -*- coding: utf-8 -*-
+# ©2022 Yuichiro Nakada
 
 # python3 make_single.py .
 

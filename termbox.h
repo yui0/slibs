@@ -1658,6 +1658,7 @@ void tb_shutdown(void)
 	termw = termh = -1;
 }
 
+int wcwidth(wchar_t c); // ???
 void tb_present(void)
 {
 	int x, y, w, i;
@@ -2350,5 +2351,16 @@ static int wait_fill_event(struct tb_event* event, struct timeval* timeout)
 			get_term_size(&event->w, &event->h);
 			return TB_EVENT_RESIZE;
 		}
+	}
+}
+
+void tb_print(const char* str, int x, int y, uint32_t fg, uint32_t bg)
+{
+	while (*str)
+	{
+		uint32_t uni;
+		str += utf8_char_to_unicode(&uni, str);
+		tb_change_cell(x, y, uni, fg, bg);
+		x++;
 	}
 }
