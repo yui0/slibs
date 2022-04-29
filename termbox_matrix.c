@@ -1,18 +1,6 @@
 // gcc termbox_matrix.c -o termbox_matrix
 #include "termbox.h"
 
-struct box
-{
-	uint32_t left_up;
-	uint32_t left_down;
-	uint32_t right_up;
-	uint32_t right_down;
-	uint32_t top;
-	uint32_t bot;
-	uint32_t left;
-	uint32_t right;
-};
-
 struct matrix_dot
 {
 	int val;
@@ -27,14 +15,8 @@ struct matrix_state
 	int* updates;
 };
 
-struct doom_state
-{
-	uint8_t* buf;
-};
-
 union anim_state
 {
-	struct doom_state* doom;
 	struct matrix_state* matrix;
 };
 
@@ -45,7 +27,6 @@ struct term_buf
 	uint16_t init_width;
 	uint16_t init_height;
 
-	struct box box_chars;
 	char* info_line;
 	uint16_t labels_max_len;
 	uint16_t box_x;

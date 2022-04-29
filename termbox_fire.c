@@ -1,43 +1,6 @@
 // gcc termbox_fire.c -o termbox_fire
 #include "termbox.h"
 
-struct box
-{
-	uint32_t left_up;
-	uint32_t left_down;
-	uint32_t right_up;
-	uint32_t right_down;
-	uint32_t top;
-	uint32_t bot;
-	uint32_t left;
-	uint32_t right;
-};
-
-struct matrix_dot
-{
-	int val;
-	bool is_head;
-};
-
-struct matrix_state
-{
-	struct matrix_dot** grid;
-	int* length;
-	int* spaces;
-	int* updates;
-};
-
-struct doom_state
-{
-	uint8_t* buf;
-};
-
-union anim_state
-{
-	struct doom_state* doom;
-	struct matrix_state* matrix;
-};
-
 struct term_buf
 {
 	uint16_t width;
@@ -45,7 +8,6 @@ struct term_buf
 	uint16_t init_width;
 	uint16_t init_height;
 
-	struct box box_chars;
 	char* info_line;
 	uint16_t labels_max_len;
 	uint16_t box_x;
@@ -53,7 +15,7 @@ struct term_buf
 	uint16_t box_width;
 	uint16_t box_height;
 
-	union anim_state astate;
+	uint8_t* buf;
 };
 
 #define DOOM_STEPS 13
@@ -61,24 +23,20 @@ static void doom_init(struct term_buf* buf)
 {
 	buf->init_width = buf->width;
 	buf->init_height = buf->height;
-	buf->astate.doom = malloc(sizeof(struct doom_state));
-
-	if (buf->astate.doom == NULL) return; //dgn_throw(DGN_ALLOC);
 
 	uint16_t tmp_len = buf->width * buf->height;
-	buf->astate.doom->buf = malloc(tmp_len);
+	buf->buf = malloc(tmp_len);
 	tmp_len -= buf->width;
 
-	if (buf->astate.doom->buf == NULL) return; //dgn_throw(DGN_ALLOC);
+	if (buf->buf == NULL) return; //dgn_throw(DGN_ALLOC);
 
-	memset(buf->astate.doom->buf, 0, tmp_len);
-	memset(buf->astate.doom->buf + tmp_len, DOOM_STEPS - 1, buf->width);
+	memset(buf->buf, 0, tmp_len);
+	memset(buf->buf + tmp_len, DOOM_STEPS - 1, buf->width);
 }
 
 static void doom_free(struct term_buf* buf)
 {
-	free(buf->astate.doom->buf);
-	free(buf->astate.doom);
+	free(buf->buf);
 }
 
 static void doom(struct term_buf* term_buf)
@@ -105,7 +63,7 @@ static void doom(struct term_buf* term_buf)
 	uint16_t dst;
 
 	uint16_t w = term_buf->init_width;
-	uint8_t* tmp = term_buf->astate.doom->buf;
+	uint8_t* tmp = term_buf->buf;
 
 	if ((term_buf->width != term_buf->init_width) || (term_buf->height != term_buf->init_height))
 	{
@@ -144,40 +102,19 @@ static void doom(struct term_buf* term_buf)
 	}
 }
 
-/*void printf_tb(int x, int y, uint32_t fg, uint32_t bg, const char* fmt, ...)
-{
-	char buf[4096];
-	va_list vl;
-	va_start(vl, fmt);
-	vsnprintf(buf, sizeof(buf), fmt, vl);
-	va_end(vl);
-	print_tb(buf, x, y, fg, bg);
-}*/
-
 int main()
 {
 	tb_init();
 	tb_select_output_mode(TB_OUTPUT_NORMAL);
 	tb_clear();
 
-/*	tb_select_output_mode(TB_OUTPUT_TRUECOLOR);
-	int w = tb_width();
-	int h = tb_height();
-	uint32_t bg = 0x000000, fg = 0x000000;
-	tb_clear();
-	int z = 0;
-
-	tb_present();*/
-
 	struct term_buf buf;
 	buf.width = tb_width();
 	buf.height = tb_height();
 
-	//switch_tty(&buf);
 	doom_init(&buf);
 	while (1) {
 		struct tb_event ev;
-//		int t = tb_poll_event(&ev);
 		int t = tb_peek_event(&ev, 10);
 
 		if (t == -1) break;
@@ -187,7 +124,6 @@ int main()
 		doom(&buf);
 		tb_print("Fire demo!", 33, 1, TB_MAGENTA | TB_BOLD, TB_DEFAULT);
 		tb_present();
-//		usleep(10000);
 	}
 	doom_free(&buf);
 
