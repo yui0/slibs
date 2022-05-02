@@ -2354,7 +2354,7 @@ static int wait_fill_event(struct tb_event* event, struct timeval* timeout)
 	}
 }
 
-void tb_print(const char* str, int x, int y, uint32_t fg, uint32_t bg)
+void tb_print(int x, int y, uint32_t fg, uint32_t bg, const char* str)
 {
 	while (*str)
 	{
@@ -2363,4 +2363,15 @@ void tb_print(const char* str, int x, int y, uint32_t fg, uint32_t bg)
 		tb_change_cell(x, y, uni, fg, bg);
 		x++;
 	}
+}
+
+#include <stdarg.h>
+void tb_printf(int x, int y, uint32_t fg, uint32_t bg, const char* fmt, ...)
+{
+	char buf[4096];
+	va_list vl;
+	va_start(vl, fmt);
+	vsnprintf(buf, sizeof(buf), fmt, vl);
+	va_end(vl);
+	tb_print(x, y, fg, bg, buf);
 }

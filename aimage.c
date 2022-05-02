@@ -8,6 +8,8 @@
 #include <sys/ioctl.h>
 #include <time.h>
 
+//#include "termbox.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 //#define JEBP_IMPLEMENTATION
@@ -58,6 +60,16 @@ void usage()
 
 int main(int argc, char *argv[])
 {
+#ifdef H_TERMBOX
+	tb_init();
+//	tb_select_output_mode(TB_OUTPUT_TRUECOLOR);
+	tb_select_output_mode(TB_OUTPUT_256);
+	tb_clear();
+
+	int width, height;
+	width = tb_width();
+	height = tb_height();
+#else
 	// get terminal size
 	int width, height;
 	struct winsize ws;
@@ -67,6 +79,7 @@ int main(int argc, char *argv[])
 			height = ws.ws_row;
 		} 
 	}
+#endif
 
 	if (argc < 2 || 4 < argc) {
 		usage();
@@ -75,5 +88,9 @@ int main(int argc, char *argv[])
 	} else {
 		aviewer(argv[1], atoi(argv[2]), atoi(argv[3]));
 	}
+
+#ifdef H_TERMBOX
+	tb_shutdown();
+#endif
 	return 0;
 }

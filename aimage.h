@@ -249,12 +249,26 @@ void simage(uint8_t *str, uint8_t *pix, int width, int height, int rx, int ry, i
 
 void pimage(uint8_t *pix, int width, int height)
 {
+#ifdef H_TERMBOX
+	for (int y=0; y<height; y++) {
+		for (int x=0; x<width; x++) {
+			// true color
+/*			int col = *pix++;
+			int c = pal2rgb[col][0]*256*256 +pal2rgb[col][1]*256 +pal2rgb[col][2];
+			tb_change_cell(x, y, ' ', 0, c);*/
+
+			tb_change_cell(x, y, ' ', 0, *pix++); // 256
+		}
+	}
+#else
+	printf("\033[1;1H");
 	for (int y=0; y<height; y++) {
 		for (int x=0; x<width; x++) {
 			printf("\x1b[0;48;5;%um ", *pix++);
 		}
 		printf("\x1b[39m\x1b[49m\n");
 	}
+#endif
 }
 
 #define MAX(a,b) (((a) > (b)) ? (a) : (b))
@@ -308,9 +322,14 @@ void aviewer(char *name, int sx, int sy)
 	uint8_t *screen = aviewer_init(name, sx, sy, &w, &h, &frames);
 
 	for (int i=0; i<frames; i++) {
-		printf("\033[1;1H");
+#ifdef H_TERMBOX
+		tb_clear();
+#endif
 //		pimage(screen[i], width/rx, height/ry);
 		pimage(screen+i*w*h, w, h);
+#ifdef H_TERMBOX
+		tb_present();
+#endif
 
 		struct timespec req;
 		req.tv_sec  = 0;
