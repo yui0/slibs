@@ -2375,3 +2375,16 @@ void tb_printf(int x, int y, uint32_t fg, uint32_t bg, const char* fmt, ...)
 	va_end(vl);
 	tb_print(x, y, fg, bg, buf);
 }
+
+void tb_pixel(int x, int y, uint32_t col)
+{
+	struct tb_cell* buf = tb_cell_buffer();
+	
+//	if ((unsigned)x >= (unsigned)back_buffer.width) return;
+//	if ((unsigned)y >= (unsigned)back_buffer.height) return;
+
+	buf += (y>>1) * back_buffer.width +x;
+	buf->ch = 0x2580;//'▀'; // Unicode Character “▀” (U+2580)
+	if (y&1) buf->bg = col;
+	else buf->fg = col;
+}
