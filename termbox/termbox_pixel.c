@@ -23,6 +23,14 @@ int main()
 				tb_pixel(x, y, (x*256*256 + (rand() % 64)*256 + (rand() % 96 - y * 8)));
 			}
 		}
+
+		struct tb_cell* buf = tb_cell_buffer();
+		buf += width * height/2;
+		for (int n=30; n<512; n++) {
+			buf->ch = n;//0x2580; // unicode
+			buf->fg = (n*256*256 + (rand() % 64)*256 + (rand() % 96 - n * 8));//256*256*256;
+			buf++;
+		}
 		tb_present();
 	}
 

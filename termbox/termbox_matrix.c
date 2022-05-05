@@ -246,7 +246,7 @@ int main()
 
 		tb_clear();
 		matrix(&buf);
-		tb_print("Matrix demo!", 33, 1, TB_MAGENTA | TB_BOLD, TB_DEFAULT);
+		tb_print(33, 1, TB_MAGENTA | TB_BOLD, TB_DEFAULT, "Matrix demo!");
 		tb_present();
 	}
 	matrix_free(&buf);

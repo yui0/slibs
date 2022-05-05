@@ -166,7 +166,7 @@ void rain()
 			}
 		}
 
-		tb_print("Rain demo!", 33, 1, TB_MAGENTA | TB_BOLD, TB_DEFAULT);
+		tb_print(33, 1, TB_MAGENTA | TB_BOLD, TB_DEFAULT, "Rain demo!");
 		tb_present();
 	}
 }

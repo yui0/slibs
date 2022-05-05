@@ -8,6 +8,7 @@
 #include <sys/ioctl.h>
 #include <time.h>
 
+//#define USE_HALF_BLOCKS
 //#include "termbox.h"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -90,6 +91,13 @@ int main(int argc, char *argv[])
 	}
 
 #ifdef H_TERMBOX
+	while (1) {
+		struct tb_event ev;
+		int t = tb_peek_event(&ev, 10);
+
+		if (t == -1) break;
+		if (t == TB_EVENT_KEY) break;
+	}
 	tb_shutdown();
 #endif
 	return 0;
