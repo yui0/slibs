@@ -10,7 +10,7 @@ CC = icc
 endif
 CFLAGS = -I../ -Os -ffunction-sections -fdata-sections -funroll-loops -finline-functions -ftree-vectorize
 #CFLAGS = -Os -ffunction-sections -fdata-sections -funroll-loops -finline-functions -ftree-vectorize -march=native
-LDFLAGS = -Wl,-s -Wl,--gc-sections
+LDFLAGS = -Wl,-s -Wl,--gc-sections -lm
 #LDFLAGS = -lasound -lm -Wl,-s -Wl,-dead_strip
 
 .PHONY: all

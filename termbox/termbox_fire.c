@@ -126,12 +126,8 @@ int main()
 		struct tb_event ev;
 		int t = tb_peek_event(&ev, 10);
 
-		if (t == -1) {
-			break;
-		}
-		if (t == TB_EVENT_KEY) {
-			break;
-		}
+		if (t == -1) break;
+		if (t == TB_EVENT_KEY) break;
 
 		tb_clear();
 		fire(&buf);
