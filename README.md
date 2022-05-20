@@ -20,12 +20,14 @@ Single file libraries for C/C++.
 |**[pssub.h](pssub.h)** | image | 25689 | unknown | Postscript library
 |**[svg.h](svg.h)** | image | 21735 | Apache-2.0 | SVG library
 | --------------------- | -------- | --- | --- | --------------------------------
+|**[kms-glsl.h](kms-glsl.h)** | OpenGL | 2426 | MIT | [OpenGL using the DRM/KMS](https://github.com/astefanutti/kms-glsl)
+| --------------------- | -------- | --- | --- | --------------------------------
 |**[fft.h](fft.h)** | math | 2244 | public domain | Fast Fourier Transform
 |**[ifft.h](fft.h)** | math | 19875 | unknown | Fixed-point in-place Fast Fourier Transform
 |**[fmath.h](fmath.h)** | math | 142 | public domain | Fast math library
 |**[random.h](random.h)** | math | 33 | public domain | XOR128 random function
-|**[sgemm_sse.h](sgemm_sse.h)** | math | 451 | public domain | Fast GEMM function for SSE [ref: https://github.com/yui0/ugemm]
 | --------------------- | -------- | --- | --- | --------------------------------
+|**[sgemm_sse.h](sgemm_sse.h)** | math | 451 | public domain | Fast GEMM function for SSE [ref: https://github.com/yui0/ugemm]
 |**[sgemm_ocl.h](sgemm_ocl.h)** | GPGPU/math | 662 | public domain | Fast GEMM function for OpenCL [ref: https://github.com/yui0/ugemm]
 |**[sgemm_gl.h](sgemm_gl.h)** | GPGPU/math | 110 | public domain | Fast GEMM function for OpenGL4 [ref: https://github.com/yui0/ugemm]
 |**[gpgpu_glsl.h](gpgpu_glsl.h)** | GPGPU | 399 | public domain | GLSL frameworks [ref: https://github.com/yui0/waifu2x-glsl]

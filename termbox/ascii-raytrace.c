@@ -21,21 +21,20 @@ vec3 SPHEREVEL     = { 0.0f,  0.0f,  0.0f};
 float SPHERERADIUS = 0.9f;
 
 // char SHADES[10] = " .-~=+<#%@"; // alternate character only palette
-char SHADES[10] = {32, 32, 176, 176, 177, 177, 178, 178, 219, 219}; //
+//char SHADES[10] = {32, 32, 176, 176, 177, 177, 178, 178, 219, 219};
+char SHADES[10] = {176, 177, 178, 179, 180, 181, 182, 183, 184, 185};
 
 // window resolution in characters
 int COLUMNS, ROWS;
 
 bool intersectLight(ray ray)
 {
-
 	// true if ray passes within LIGHTRADIUS of LIGHTPOS
 	return length( cross(ray.d, sub(LIGHTPOS, ray.o)) ) < LIGHTRADIUS;
 }
 
 float bloom(ray ray)
 {
-
 	// gives a glow around the light
 
 	// closest distance from ray to light centre
@@ -47,7 +46,6 @@ float bloom(ray ray)
 
 bool intersectSphere(ray viewRay, ray* outNormal)
 {
-
 	// intersection formula of ray with sphere gives a quadratic equation
 	// b and c are x and unit coefficients
 	float b = 2.0f*dot(viewRay.d, sub(viewRay.o, SPHERECENTRE));
@@ -77,7 +75,6 @@ bool intersectSphere(ray viewRay, ray* outNormal)
 
 float shadowOfSphere(ray ray)
 {
-
 	// dist along ray to closest distance to sphere
 	float distToClosestDist = dot(ray.d, sub(SPHERECENTRE, ray.o));
 
@@ -95,7 +92,6 @@ float shadowOfSphere(ray ray)
 
 bool intersectPlane(ray viewRay, ray* outNormal, ray* outShadow)
 {
-
 	// interection with ground plane - at y=0 with normal facing up
 
 	// if ray is perpendicular to plane or close enought then it won't intersect

@@ -54,3 +54,4 @@ with open('/tmp/merged.h', 'w') as f_new:
             for id, line in enumerate(lines):
                 if '#include "' in line: lines[id] = '// '+line
             f_new.writelines(lines)
+        f_new.write('\n\n')
