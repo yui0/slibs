@@ -1,214 +1,487 @@
-#include <err.h>
-#include <time.h>
+// berry-dm
+// Copyright © 2022 Yuichiro Nakada
+
+#include <stdio.h>
+#include <string.h>
+//#include <time.h>
 #include <fcntl.h>
 #include <malloc.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-#include <GLES3/gl3.h>
+//#include <GLES3/gl3.h>
 
-#define NSEC_PER_SEC (INT64_C(1000) * USEC_PER_SEC)
-#define USEC_PER_SEC (INT64_C(1000) * MSEC_PER_SEC)
-#define MSEC_PER_SEC INT64_C(1000)
+// OpenGL ES 2.0 / GLSL 100
 
-int create_program(const char *vs_src, const char *fs_src)
+static const char common_shader_header_gles2[] =
+    "#version 100\n"
+    "precision highp float;";
+
+static const char vertex_shader_body_gles2[] =
+    "attribute vec4 iPosition;"
+    "void main(){gl_Position=iPosition;}";
+
+static const char fragment_shader_header_gles2[] =
+    "uniform vec3 iResolution;"
+    "uniform float iGlobalTime;" // legacy
+    "uniform float iTime;"
+    "uniform float iChannelTime[4];"
+    "uniform vec4 iMouse;"
+    "uniform vec4 iDate;"
+    "uniform float iSampleRate;"
+    "uniform vec3 iChannelResolution[4];"
+    "uniform sampler2D iChannel0;"
+    "uniform sampler2D iChannel1;"
+    "uniform sampler2D iChannel2;"
+    "uniform sampler2D iChannel3;\n";
+
+static const char fragment_shader_footer_gles2[] =
+    "\nvoid main(){mainImage(gl_FragColor,gl_FragCoord.xy);}";
+
+// OpenGL ES 3.0 / GLSL 300 es
+
+static const char common_shader_header_gles3[] =
+    "#version 300 es\n"
+    "precision highp float;\n";
+
+static const char vertex_shader_body_gles3[] =
+    "layout(location = 0) in vec4 iPosition;"
+    "void main() {"
+    "  gl_Position=iPosition;"
+    "}\n";
+
+static const char fragment_shader_header_gles3[] =
+    "uniform vec3 iResolution;"
+    "uniform float iGlobalTime;" // legacy
+    "uniform float iTime;"
+    "uniform float iChannelTime[4];"
+    "uniform vec4 iMouse;"
+    "uniform vec4 iDate;"
+    "uniform float iSampleRate;"
+    "uniform vec3 iChannelResolution[4];"
+    "uniform sampler2D iChannel0;"
+    "uniform sampler2D iChannel1;"
+    "uniform sampler2D iChannel2;"
+    "uniform sampler2D iChannel3;"
+    "out vec4 fragColor;\n";
+
+static const char fragment_shader_footer_gles3[] =
+    "\nvoid main(){mainImage(fragColor, gl_FragCoord.xy);}";
+
+// Standard ShaderToy Shader
+static char *default_fragment_shader =
+    "void mainImage( out vec4 fragColor, in vec2 fragCoord )"
+    "{"
+    "    vec2 uv = fragCoord/iResolution.xy;"
+    "    vec3 col = 0.5 + 0.5*cos(iTime+uv.xyx+vec3(0,2,4));"
+    "    fragColor = vec4(col,1.0);"
+    "}";
+
+static const char* common_shader_header = common_shader_header_gles3;
+static const char* vertex_shader_body = vertex_shader_body_gles3;
+static const char* fragment_shader_header = fragment_shader_header_gles3;
+static const char* fragment_shader_footer = fragment_shader_footer_gles3;
+static int gles_major = 3;
+static int gles_minor = 0;
+
+#ifdef USE_GLFW
+static GLFWwindow *window;
+#endif
+static GLuint shader_program;
+static GLint attrib_position;
+static GLint sampler_channel[4];
+static GLint uniform_cres;
+static GLint uniform_ctime;
+static GLint uniform_date;
+static GLint uniform_gtime;
+static GLint uniform_time;
+static GLint uniform_mouse;
+static GLint uniform_res;
+static GLint uniform_srate;
+
+static GLfloat viewportSizeX = 0.0;
+static GLfloat viewportSizeY = 0.0;
+static GLfloat mouseX = 0.0;
+static GLfloat mouseY = 0.0;
+static GLfloat mouseLPressed = 0.0;
+static GLfloat mouseRPressed = 0.0;
+
+static int mouseUpdating = 0;
+static int maximized = 0;
+
+// what iChannel to bind the virtual keyboard to (argument -k)
+static int bindKeyboard = -1;
+// for storing the keyboard state in a ST-style texture
+static unsigned char keyStateTextureData[256 * 3];
+static GLuint keyStateTextureID;
+// for translating to JS key codes
+static int keyLookup[GLFW_KEY_LAST + 1];
+
+static void die(const char *format, ...)
 {
-	GLuint vertex_shader, fragment_shader, program;
-	GLint ret;
+	va_list args;
 
-	vertex_shader = glCreateShader(GL_VERTEX_SHADER);
+	va_start(args, format);
+	vfprintf(stderr, format, args);
+	va_end(args);
 
-	glShaderSource(vertex_shader, 1, &vs_src, NULL);
-	glCompileShader(vertex_shader);
+//	exit(EXIT_FAILURE);
+	exit(0);
+}
 
-	glGetShaderiv(vertex_shader, GL_COMPILE_STATUS, &ret);
-	if (!ret) {
-		char *log;
+static void info(const char *format, ...)
+{
+	va_list args;
 
-		printf("vertex shader compilation failed!:\n");
-		glGetShaderiv(vertex_shader, GL_INFO_LOG_LENGTH, &ret);
-		if (ret > 1) {
-			log = malloc(ret);
-			glGetShaderInfoLog(vertex_shader, ret, NULL, log);
-			printf("%s", log);
+	va_start(args, format);
+	vfprintf(stdout, format, args);
+	va_end(args);
+}
+
+static GLuint compile_shader(GLenum type, GLsizei nsources, const char **sources)
+{
+	GLuint shader;
+	GLint success, len;
+	GLsizei srclens[nsources];
+	char *log;
+
+	for (int i=0; i < nsources; ++i) {
+		srclens[i] = (GLsizei)strlen(sources[i]);
+	}
+
+	shader = glCreateShader(type);
+	glShaderSource(shader, nsources, sources, srclens);
+	glCompileShader(shader);
+
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+	if (!success) {
+		glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &len);
+		if (len > 1) {
+			log = malloc(len);
+			glGetShaderInfoLog(shader, len, NULL, log);
+			fprintf(stderr, "%s\n\n", log);
 			free(log);
 		}
-
-		return -1;
+		die("Error compiling shader.\n");
 	}
 
-	fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
+	return shader;
+}
 
-	glShaderSource(fragment_shader, 1, &fs_src, NULL);
-	glCompileShader(fragment_shader);
+/*static void select_gles2()
+{
+	info("Selected OpenGL ES 2.0 / GLSL 100\n");
+	common_shader_header = common_shader_header_gles2;
+	vertex_shader_body = vertex_shader_body_gles2;
+	fragment_shader_header = fragment_shader_header_gles2;
+	fragment_shader_footer = fragment_shader_footer_gles2;
+	gles_major = 2;
+	gles_minor = 0;
+}
 
-	glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &ret);
-	if (!ret) {
-		char *log;
+static void select_gles3()
+{
+	info("Selected OpenGL ES 3.0 / GLSL 300 es\n");
+	common_shader_header = common_shader_header_gles3;
+	vertex_shader_body = vertex_shader_body_gles3;
+	fragment_shader_header = fragment_shader_header_gles3;
+	fragment_shader_footer = fragment_shader_footer_gles3;
+	gles_major = 3;
+	gles_minor = 0;
+}*/
 
-		printf("%s\n", fs_src);
-		printf("fragment shader compilation failed!:\n");
-		glGetShaderiv(fragment_shader, GL_INFO_LOG_LENGTH, &ret);
+#ifdef USE_GLFW
+// GLFW functions from here
+static void resize_viewport(GLFWwindow* window/*for callback*/, int w, int h)
+{
+	glUniform3f(uniform_res, (float)w, (float)h, 0.0f);
+	glViewport(0, 0, w, h);
+	info("Setting window size to (%d,%d).\n", w, h);
+	viewportSizeX = w;
+	viewportSizeY = h;
+}
 
-		if (ret > 1) {
-			log = malloc(ret);
-			glGetShaderInfoLog(fragment_shader, ret, NULL, log);
-			printf("%s", log);
-			free(log);
+static void st_populate_key_lookup()
+{
+	// Convert GLFW key codes to Shadertoy / JS
+	for (int i=0; i <= GLFW_KEY_LAST; ++i) {
+		keyLookup[i] = -1;
+	}
+	for (int i = GLFW_KEY_0; i <= GLFW_KEY_9; ++i) {
+		keyLookup[i] = i;
+	}
+	for (int i = GLFW_KEY_A; i <= GLFW_KEY_Z; ++i) {
+		keyLookup[i] = i;
+	}
+	for (int i = GLFW_KEY_F1; i <= GLFW_KEY_F12; ++i) {
+		keyLookup[i] = 112 + i - GLFW_KEY_F1;
+	}
+	for (int i = GLFW_KEY_KP_0; i <= GLFW_KEY_KP_9; ++i) {
+		keyLookup[i] = 96 + i - GLFW_KEY_KP_0;
+	}
+	keyLookup[GLFW_KEY_SPACE]         = 32;
+	keyLookup[GLFW_KEY_APOSTROPHE]    = 222;
+	keyLookup[GLFW_KEY_COMMA]         = 188;
+	keyLookup[GLFW_KEY_MINUS]         = 173;
+	keyLookup[GLFW_KEY_PERIOD]        = 190;
+	keyLookup[GLFW_KEY_SLASH]         = 191;
+	keyLookup[GLFW_KEY_SEMICOLON]     = 59;
+	keyLookup[GLFW_KEY_EQUAL]         = 61;
+	keyLookup[GLFW_KEY_LEFT_BRACKET]  = 219;
+	keyLookup[GLFW_KEY_BACKSLASH]     = 220;
+	keyLookup[GLFW_KEY_RIGHT_BRACKET] = 221;
+	keyLookup[GLFW_KEY_GRAVE_ACCENT]  = 192;
+	keyLookup[GLFW_KEY_ESCAPE]        = 27;
+	keyLookup[GLFW_KEY_ENTER]         = 13;
+	keyLookup[GLFW_KEY_TAB]           = 9;
+	keyLookup[GLFW_KEY_BACKSPACE]     = 8;
+	keyLookup[GLFW_KEY_INSERT]        = 45;
+	keyLookup[GLFW_KEY_DELETE]        = 46;
+	keyLookup[GLFW_KEY_RIGHT]         = 39;
+	keyLookup[GLFW_KEY_LEFT]          = 37;
+	keyLookup[GLFW_KEY_DOWN]          = 40;
+	keyLookup[GLFW_KEY_UP]            = 38;
+	keyLookup[GLFW_KEY_PAGE_UP]       = 33;
+	keyLookup[GLFW_KEY_PAGE_DOWN]     = 34;
+	keyLookup[GLFW_KEY_HOME]          = 36;
+	keyLookup[GLFW_KEY_END]           = 35;
+	keyLookup[GLFW_KEY_CAPS_LOCK]     = 20;
+	keyLookup[GLFW_KEY_SCROLL_LOCK]   = 145;
+	keyLookup[GLFW_KEY_NUM_LOCK]      = 144;
+	keyLookup[GLFW_KEY_PRINT_SCREEN]  = 42;
+	keyLookup[GLFW_KEY_PAUSE]         = 19;
+	keyLookup[GLFW_KEY_KP_DECIMAL]    = 110;
+	keyLookup[GLFW_KEY_KP_DIVIDE]     = 111;
+	keyLookup[GLFW_KEY_KP_MULTIPLY]   = 106;
+	keyLookup[GLFW_KEY_KP_SUBTRACT]   = 109;
+	keyLookup[GLFW_KEY_KP_ADD]        = 107;
+	keyLookup[GLFW_KEY_KP_ENTER]      = 13;
+	keyLookup[GLFW_KEY_LEFT_SHIFT]    = 16;
+	keyLookup[GLFW_KEY_LEFT_CONTROL]  = 17;
+	keyLookup[GLFW_KEY_LEFT_ALT]      = 18;
+	keyLookup[GLFW_KEY_LEFT_SUPER]    = 91;
+	keyLookup[GLFW_KEY_RIGHT_SHIFT]   = 16;
+	keyLookup[GLFW_KEY_RIGHT_CONTROL] = 17;
+	keyLookup[GLFW_KEY_RIGHT_ALT]     = 225;
+	keyLookup[GLFW_KEY_RIGHT_SUPER]   = 91;
+	keyLookup[GLFW_KEY_MENU]          = 93;
+}
+
+static void st_update_keystate()
+{
+	if (bindKeyboard >= 0) {
+		glActiveTexture(GL_TEXTURE0 + bindKeyboard);
+		glBindTexture(GL_TEXTURE_2D, keyStateTextureID);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, 256, 3, 0, GL_RED, GL_UNSIGNED_BYTE, keyStateTextureData);
+		glUniform1i(sampler_channel[bindKeyboard], bindKeyboard);
+	}
+}
+
+static void st_reset_keystate()
+{
+	memset(keyStateTextureData, 0, sizeof(keyStateTextureData));
+}
+
+static void st_partially_reset_keystate()
+{
+	// Reset 'just pressed' (= rising edge key event) flags
+	for (int i=0; i<256; ++i) {
+		keyStateTextureData[i + 256] = 0;
+	}
+}
+
+static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+	printf("key %d action %d\n", key, action);
+	if (action == GLFW_PRESS) {
+		int js = keyLookup[key];
+		if (js >= 0) {
+			keyStateTextureData[js + 0] = 255;
+			keyStateTextureData[js + 256] = 255;
+			keyStateTextureData[js + 512] = keyStateTextureData[js + 512] ^ 0xff;
 		}
-
-		return -1;
-	}
-
-	program = glCreateProgram();
-
-	glAttachShader(program, vertex_shader);
-	glAttachShader(program, fragment_shader);
-
-	return program;
-}
-
-int link_program(unsigned program)
-{
-	GLint ret;
-
-	glLinkProgram(program);
-
-	glGetProgramiv(program, GL_LINK_STATUS, &ret);
-	if (!ret) {
-		char *log;
-
-		printf("program linking failed!:\n");
-		glGetProgramiv(program, GL_INFO_LOG_LENGTH, &ret);
-
-		if (ret > 1) {
-			log = malloc(ret);
-			glGetProgramInfoLog(program, ret, NULL, log);
-			printf("%s", log);
-			free(log);
+		if (key == GLFW_KEY_Q || key == GLFW_KEY_ESCAPE) {
+			glfwSetWindowShouldClose(window, 1);
+		} else if (key == GLFW_KEY_F) {
+			if (maximized) {
+				glfwRestoreWindow(window);
+				maximized = 0;
+			} else {
+				glfwMaximizeWindow(window);
+				maximized = 1;
+			}
 		}
-
-		return -1;
+	} else if (action == GLFW_RELEASE) {
+		int js = keyLookup[key];
+		if (js >= 0) {
+			keyStateTextureData[js + 0] = 0;
+			keyStateTextureData[js + 256] = 0;
+		}
 	}
-
-	return 0;
 }
 
-uint64_t get_time_ns()
+static void cursor_position_callback(GLFWwindow* window, double xpos, double ypos)
 {
-	struct timespec tv;
-	clock_gettime(CLOCK_MONOTONIC, &tv);
-	return tv.tv_nsec + tv.tv_sec * NSEC_PER_SEC;
+	mouseX = xpos;
+	mouseY = viewportSizeY - ypos;
+	if (mouseUpdating) {
+		glUniform4f(uniform_mouse, mouseX, mouseY, mouseLPressed, mouseRPressed);
+	}
 }
 
-
-GLint iTime, iFrame;
-
-static const char *shadertoy_vs =
-	"attribute vec3 position;                \n"
-	"void main()                             \n"
-	"{                                       \n"
-	"    gl_Position = vec4(position, 1.0);  \n"
-	"}                                       \n";
-
-static const char *shadertoy_fs_tmpl =
-	"#version 130                                                                         \n"
-	"precision mediump float;                                                             \n"
-	"uniform vec2      iResolution;           // viewport resolution (in pixels)          \n"
-	"uniform float     iTime;                 // shader playback time (in seconds)        \n"
-	"uniform int       iFrame;                // current frame number                     \n"
-	"uniform vec4      iMouse;                // mouse pixel coords                       \n"
-	"uniform vec4      iDate;                 // (year, month, day, time in seconds)      \n"
-	"uniform float     iSampleRate;           // sound sample rate (i.e., 44100)          \n"
-	"uniform vec3      iChannelResolution[4]; // channel resolution (in pixels)           \n"
-	"uniform float     iChannelTime[4];       // channel playback time (in sec)           \n"
-	"                                                                                     \n"
-	"%s                                                                                   \n"
-	"                                                                                     \n"
-	"void main()                                                                          \n"
-	"{                                                                                    \n"
-	"    mainImage(gl_FragColor, gl_FragCoord.xy);                                        \n"
-	"}                                                                                    \n";
-
-static const GLfloat vertices[] = {
-	// First triangle:
-	1.0f, 1.0f,
-	-1.0f, 1.0f,
-	-1.0f, -1.0f,
-	// Second triangle:
-	-1.0f, -1.0f,
-	1.0f, -1.0f,
-	1.0f, 1.0f,
-};
-
-static char *load_shader(const char *file)
+static void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 {
-	struct stat statbuf;
-	char *frag;
-	int fd, ret;
-
-	fd = open(file, 0);
-	if (fd < 0) {
-		err(fd, "could not open '%s'", file);
+	printf("button %d action %d\n", button, action);
+	if (button == 0) {
+		mouseUpdating = action;
+		mouseLPressed = action;
+	} else if (button == 1) {
+		mouseRPressed = action;
 	}
+	glUniform4f(uniform_mouse, mouseX, mouseY, mouseLPressed, mouseRPressed);
+}
+#endif
 
-	ret = fstat(fd, &statbuf);
-	if (ret < 0) {
-		err(ret, "could not stat '%s'", file);
+static char* read_file_into_str(const char *filename)
+{
+	long length = 0;
+	char *result = NULL;
+	FILE *file = fopen(filename, "r");
+	if (file) {
+		int status = fseek(file, 0, SEEK_END);
+		if (status != 0) {
+			fclose(file);
+			return NULL;
+		}
+		length = ftell(file);
+		status = fseek(file, 0, SEEK_SET);
+		if (status != 0) {
+			fclose(file);
+			return NULL;
+		}
+		result = malloc((length+1) * sizeof(char));
+		if (result) {
+			size_t actual_length = fread(result, sizeof(char), length , file);
+			result[actual_length++] = '\0';
+		} 
+		fclose(file);
+		return result;
 	}
-
-	const char *text = mmap(NULL, statbuf.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-	asprintf(&frag, shadertoy_fs_tmpl, text);
-
-	return frag;
+	return NULL;
 }
 
-static void draw_shadertoy(uint64_t start_time, unsigned frame)
+static void st_render(float abstime)
 {
-	glUniform1f(iTime, (get_time_ns() - start_time) / (double) NSEC_PER_SEC);
-	// Replace the above to input ellapsed time relative to 60 FPS
-	// glUniform1f(iTime, (float) frame / 60.0f);
-	glUniform1ui(iFrame, frame);
+/*	static const GLfloat vertices[] = {
+		-1.0f, -1.0f,
+		1.0f, -1.0f,
+		-1.0f, 1.0f,
+		1.0f, 1.0f,
+	};*/
+	static const GLfloat vertices[] = {
+		// First triangle:
+		1.0f, 1.0f,
+		-1.0f, 1.0f,
+		-1.0f, -1.0f,
+		// Second triangle:
+		-1.0f, -1.0f,
+		1.0f, -1.0f,
+		1.0f, 1.0f,
+	};
 
-//	start_perfcntrs();
+	if (uniform_gtime >= 0) {
+		glUniform1f(uniform_gtime, abstime);
+	}
+	if (uniform_time >= 0) {
+		glUniform1f(uniform_time, abstime);
+	}
 
+//	glClearColor(0.0f, 0.0f, 0.0f, 1.0);
+//	glClear(GL_COLOR_BUFFER_BIT);
+	glEnableVertexAttribArray(attrib_position);
+//	glVertexAttribPointer(attrib_position, 2, GL_FLOAT, GL_FALSE, 0, vertices);
+//	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	glVertexAttribPointer(attrib_position, 2, GL_FLOAT, GL_FALSE, 0, vertices);
 	glDrawArrays(GL_TRIANGLES, 0, 6);
-
-//	end_perfcntrs();
 }
 
-GLuint init_shadertoy(int width, int height, const char *file)
+GLuint st_init(int width, int height, const char *file)
 {
-	int ret;
-	GLuint program, vbo;
-	GLint iResolution;
+	GLuint vtx, frag;
+	const char *sources[4];
+	char* log;
+	GLint success, len;
 
-	char *shadertoy_fs = load_shader(file);
-	ret = create_program(shadertoy_vs, shadertoy_fs);
-	free(shadertoy_fs);
-	if (ret < 0) {
-		printf("failed to create program\n");
-		return 0;
+	if (file) default_fragment_shader = read_file_into_str(file);
+
+	sources[0] = common_shader_header;
+	sources[1] = vertex_shader_body;
+	vtx = compile_shader(GL_VERTEX_SHADER, 2, sources);
+
+	sources[0] = common_shader_header;
+	sources[1] = fragment_shader_header;
+	sources[2] = default_fragment_shader;
+	sources[3] = fragment_shader_footer;
+	frag = compile_shader(GL_FRAGMENT_SHADER, 4, sources);
+
+	shader_program = glCreateProgram();
+	glAttachShader(shader_program, vtx);
+	glAttachShader(shader_program, frag);
+	glLinkProgram(shader_program);
+
+	glGetProgramiv(shader_program, GL_LINK_STATUS, &success);
+	if (!success) {
+		glGetProgramiv(shader_program, GL_INFO_LOG_LENGTH, &len);
+		if (len > 1) {
+			log = malloc(len);
+			glGetProgramInfoLog(shader_program, len, &len, log);
+			fprintf(stderr, "%s\n\n", log);
+			free(log);
+		}
+		die("Error linking shader program.\n");
 	}
-	program = ret;
 
-	ret = link_program(program);
-	if (ret) {
-		printf("failed to link program\n");
-		return 0;
+	glDeleteShader(vtx);
+	glDeleteShader(frag);
+	glReleaseShaderCompiler();
+
+	glUseProgram(shader_program);
+	glValidateProgram(shader_program);
+
+//	iFrame = glGetUniformLocation(shader_program, "iFrame");
+	attrib_position = glGetAttribLocation(shader_program, "iPosition");
+	sampler_channel[0] = glGetUniformLocation(shader_program, "iChannel0");
+	sampler_channel[1] = glGetUniformLocation(shader_program, "iChannel1");
+	sampler_channel[2] = glGetUniformLocation(shader_program, "iChannel2");
+	sampler_channel[3] = glGetUniformLocation(shader_program, "iChannel3");
+	uniform_cres = glGetUniformLocation(shader_program, "iChannelResolution");
+	uniform_ctime = glGetUniformLocation(shader_program, "iChannelTime");
+	uniform_date = glGetUniformLocation(shader_program, "iDate");
+	uniform_gtime = glGetUniformLocation(shader_program, "iGlobalTime");
+	uniform_time = glGetUniformLocation(shader_program, "iTime");
+	uniform_mouse = glGetUniformLocation(shader_program, "iMouse");
+	uniform_res = glGetUniformLocation(shader_program, "iResolution");
+	uniform_srate = glGetUniformLocation(shader_program, "iSampleRate");
+
+	resize_viewport(window, width, height);
+
+#ifdef USE_GLFW
+	glfwSetCursorPosCallback(window, &cursor_position_callback);
+	glfwSetMouseButtonCallback(window, &mouse_button_callback);
+	glfwSetKeyCallback(window, &key_callback);
+	glfwSetFramebufferSizeCallback(window, &resize_viewport);
+#endif
+
+	bindKeyboard = 0;
+	if (bindKeyboard >= 0) {
+/*		if (texture_files[bindKeyboard] != NULL) {
+			die("Error: cannot bind texture and keyboard to the same channel.\n");
+		} else {*/
+			info("Dynamic keyboard texture will be bound to iChannel%d.\n", bindKeyboard);
+			glGenTextures(1, &keyStateTextureID);
+//		}
 	}
 
-	glViewport(0, 0, width, height);
-	glUseProgram(program);
-	iTime = glGetUniformLocation(program, "iTime");
-	iFrame = glGetUniformLocation(program, "iFrame");
-	iResolution = glGetUniformLocation(program, "iResolution");
-	glUniform2f(iResolution, width, height);
-	glGenBuffers(1, &vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), 0, GL_STATIC_DRAW);
-	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), &vertices[0]);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (const GLvoid *) (intptr_t) 0);
-	glEnableVertexAttribArray(0);
-
-	return program;
+	return shader_program;
 }

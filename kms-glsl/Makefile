@@ -10,7 +10,7 @@ CC = icc
 endif
 CFLAGS = -I../ -Os -ffunction-sections -fdata-sections -funroll-loops -finline-functions -ftree-vectorize -pthread -I/usr/include/libdrm
 LDFLAGS = -Wl,-s -Wl,--gc-sections -Wl,--as-needed -Wl,--no-undefined
-LDLIBS = -lGLESv2 -lEGL -ldrm -lgbm -lglfw
+LDLIBS = -lGLESv2 -lEGL -ldrm -lgbm -lglfw -lm -lGL
 
 .PHONY: all
 all: depend $(PROGRAM)

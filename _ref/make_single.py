@@ -23,6 +23,7 @@ for p in files:
                 #break
                 #print(line)
                 result = re.search(pattern, line.strip()).group()
+                if result in p: continue
                 list.append(result)
         d[os.path.basename(p)] = list
 
@@ -43,6 +44,8 @@ for k2, v2 in d.items():
         if len(v) == flag:
             if k not in order: order.append(k)
 
+print('')
+print('Orders: ')
 print(order)
 
 with open('/tmp/merged.h', 'w') as f_new:
