@@ -2,8 +2,9 @@
 // Copyright © 2022 Yuichiro Nakada
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-//#include <time.h>
+#include <time.h>
 #include <fcntl.h>
 #include <malloc.h>
 #include <sys/mman.h>
@@ -24,6 +25,9 @@ static const char fragment_shader_header_gles2[] =
     "uniform vec3 iResolution;"
     "uniform float iGlobalTime;" // legacy
     "uniform float iTime;"
+    "uniform float iTimeDelta;"
+    "uniform int   iFrame;"
+    "uniform float iFrameRate;"
     "uniform float iChannelTime[4];"
     "uniform vec4 iMouse;"
     "uniform vec4 iDate;"
@@ -53,6 +57,9 @@ static const char fragment_shader_header_gles3[] =
     "uniform vec3 iResolution;"
     "uniform float iGlobalTime;" // legacy
     "uniform float iTime;"
+    "uniform float iTimeDelta;"
+    "uniform int   iFrame;"
+    "uniform float iFrameRate;"
     "uniform float iChannelTime[4];"
     "uniform vec4 iMouse;"
     "uniform vec4 iDate;"
@@ -94,6 +101,7 @@ static GLint uniform_ctime;
 static GLint uniform_date;
 static GLint uniform_gtime;
 static GLint uniform_time;
+static GLint iFrame;
 static GLint uniform_mouse;
 static GLint uniform_res;
 static GLint uniform_srate;
@@ -124,8 +132,7 @@ static void die(const char *format, ...)
 	vfprintf(stderr, format, args);
 	va_end(args);
 
-//	exit(EXIT_FAILURE);
-	exit(0);
+	exit(EXIT_FAILURE);
 }
 
 static void info(const char *format, ...)
@@ -188,6 +195,68 @@ static void select_gles3()
 	gles_major = 3;
 	gles_minor = 0;
 }*/
+
+/*static void st_update_texture(int n)
+{
+	glActiveTexture(GL_TEXTURE0 + n);
+	glBindTexture(GL_TEXTURE_2D, keyStateTextureID);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, 256, 3, 0, GL_RED, GL_UNSIGNED_BYTE, keyStateTextureData);
+	glUniform1i(sampler_channel[bindKeyboard], bindKeyboard);
+}*/
+static void texture_bind(unsigned char* data, int w, int h)
+{
+	for (int i=/*0*/3; i<4; ++i) {
+		if (sampler_channel[i] < 0) {
+			info("Skipping data for unused iChannel%d\n", i);
+		} else {
+			info("Binding data for iChannel%d\n", i);
+			GLuint tex_2d;
+			glGenTextures(1, &tex_2d);
+			glActiveTexture(GL_TEXTURE0 + i);
+			glBindTexture(GL_TEXTURE_2D, tex_2d);
+			glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+//			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, /*w*/256, /*h*/3, 0, GL_RED, GL_UNSIGNED_BYTE, data);
+
+			glUniform1i(sampler_channel[i], i);
+			break;
+		}
+	}
+	glActiveTexture(GL_TEXTURE0);
+}
+
+#ifdef STBI_INCLUDE_STB_IMAGE_H
+static void load_images_and_bind(const char* filenames[])
+{
+	for (int i=0; i<4; ++i) {
+		if (filenames[i]) {
+			if (sampler_channel[i] < 0) {
+				info("Skipping image file for unused iChannel%d: %s\n", i, filenames[i]);
+			} else {
+				info("Loading image file for iChannel%d: %s\n", i, filenames[i]);
+				GLuint tex_2d;
+				int w, h, bpp;
+				unsigned char* pixels = stbi_load(filenames[i], &w, &h, &bpp, 0);
+				glGenTextures(1, &tex_2d);
+				glActiveTexture(GL_TEXTURE0 + i);
+				glBindTexture(GL_TEXTURE_2D, tex_2d);
+				glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+				stbi_image_free(pixels);
+
+				glUniform1i(sampler_channel[i], i);
+			}
+		}
+	}
+	glActiveTexture(GL_TEXTURE0);
+}
+#endif
 
 #ifdef USE_GLFW
 // GLFW functions from here
@@ -371,7 +440,7 @@ static char* read_file_into_str(const char *filename)
 	return NULL;
 }
 
-static void st_render(float abstime)
+static void st_render(float abstime, uint64_t frame)
 {
 /*	static const GLfloat vertices[] = {
 		-1.0f, -1.0f,
@@ -396,6 +465,8 @@ static void st_render(float abstime)
 	if (uniform_time >= 0) {
 		glUniform1f(uniform_time, abstime);
 	}
+
+	glUniform1ui(iFrame, frame);
 
 //	glClearColor(0.0f, 0.0f, 0.0f, 1.0);
 //	glClear(GL_COLOR_BUFFER_BIT);
@@ -449,7 +520,7 @@ GLuint st_init(int width, int height, const char *file)
 	glUseProgram(shader_program);
 	glValidateProgram(shader_program);
 
-//	iFrame = glGetUniformLocation(shader_program, "iFrame");
+	iFrame = glGetUniformLocation(shader_program, "iFrame");
 	attrib_position = glGetAttribLocation(shader_program, "iPosition");
 	sampler_channel[0] = glGetUniformLocation(shader_program, "iChannel0");
 	sampler_channel[1] = glGetUniformLocation(shader_program, "iChannel1");
@@ -463,6 +534,13 @@ GLuint st_init(int width, int height, const char *file)
 	uniform_mouse = glGetUniformLocation(shader_program, "iMouse");
 	uniform_res = glGetUniformLocation(shader_program, "iResolution");
 	uniform_srate = glGetUniformLocation(shader_program, "iSampleRate");
+
+	// for iDate
+	time_t timer;
+	struct tm *local;
+	timer = time(NULL);
+	local = localtime(&timer);
+	glUniform4f(uniform_date, local->tm_year+1900, local->tm_mon+1, local->tm_mday, local->tm_sec);
 
 	resize_viewport(window, width, height);
 

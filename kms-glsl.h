@@ -1498,7 +1498,7 @@ const struct drm * init_drm_legacy(const char *device, const char *mode_str,
 
 GLint iTime, iFrame;
 
-static const char *shadertoy_vs =
+/*static const char *shadertoy_vs =
 		"attribute vec3 position;                \n"
 		"void main()                             \n"
 		"{                                       \n"
@@ -1521,7 +1521,37 @@ static const char *shadertoy_fs_tmpl =
 		"void main()                                                                          \n"
 		"{                                                                                    \n"
 		"    mainImage(gl_FragColor, gl_FragCoord.xy);                                        \n"
-		"}                                                                                    \n";
+		"}                                                                                    \n";*/
+
+static const char shadertoy_vs[] =
+    "#version 300 es\n"
+    "precision highp float;\n"
+    "layout(location = 0) in vec4 iPosition;"
+    "void main() {"
+    "  gl_Position=iPosition;"
+    "}\n";
+
+static const char shadertoy_fs_tmpl[] =
+    "#version 300 es\n"
+    "precision highp float;\n"
+    "uniform vec3 iResolution;"
+    "uniform float iGlobalTime;" // legacy
+    "uniform float iTime;"
+    "uniform float iTimeDelta;"
+    "uniform int   iFrame;"
+    "uniform float iFrameRate;"
+    "uniform float iChannelTime[4];"
+    "uniform vec4 iMouse;"
+    "uniform vec4 iDate;"
+    "uniform float iSampleRate;"
+    "uniform vec3 iChannelResolution[4];"
+    "uniform sampler2D iChannel0;"
+    "uniform sampler2D iChannel1;"
+    "uniform sampler2D iChannel2;"
+    "uniform sampler2D iChannel3;"
+    "out vec4 fragColor;\n"
+    "%s"
+    "\nvoid main(){mainImage(fragColor, gl_FragCoord.xy);}";
 
 static const GLfloat vertices[] = {
 		// First triangle:
