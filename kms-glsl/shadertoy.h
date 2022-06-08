@@ -96,6 +96,7 @@ static GLFWwindow *window;
 static GLuint shader_program;
 static GLint attrib_position;
 static GLint sampler_channel[4];
+static GLuint sampler_channel_ID[4];
 static GLint uniform_cres;
 static GLint uniform_ctime;
 static GLint uniform_date;
@@ -196,15 +197,15 @@ static void select_gles3()
 	gles_minor = 0;
 }*/
 
-/*static void st_update_texture(int n)
+static void update_texture(int n, unsigned char* data, int w, int h)
 {
 	glActiveTexture(GL_TEXTURE0 + n);
-	glBindTexture(GL_TEXTURE_2D, keyStateTextureID);
+	glBindTexture(GL_TEXTURE_2D, sampler_channel_ID[n]);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, 256, 3, 0, GL_RED, GL_UNSIGNED_BYTE, keyStateTextureData);
-	glUniform1i(sampler_channel[bindKeyboard], bindKeyboard);
-}*/
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, w, h, 0, GL_RED, GL_UNSIGNED_BYTE, data);
+	glUniform1i(sampler_channel[n], n);
+}
 static void texture_bind(unsigned char* data, int w, int h)
 {
 	for (int i=/*0*/3; i<4; ++i) {
@@ -212,17 +213,8 @@ static void texture_bind(unsigned char* data, int w, int h)
 			info("Skipping data for unused iChannel%d\n", i);
 		} else {
 			info("Binding data for iChannel%d\n", i);
-			GLuint tex_2d;
-			glGenTextures(1, &tex_2d);
-			glActiveTexture(GL_TEXTURE0 + i);
-			glBindTexture(GL_TEXTURE_2D, tex_2d);
-			glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-//			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, /*w*/256, /*h*/3, 0, GL_RED, GL_UNSIGNED_BYTE, data);
-
-			glUniform1i(sampler_channel[i], i);
+			glGenTextures(1, &sampler_channel_ID[i]);
+			update_texture(i, data, 256, 3);
 			break;
 		}
 	}

@@ -68,6 +68,7 @@ struct drm {
 	unsigned int count;
 
 	int (*run)(const struct gbm *gbm, const struct egl *egl);
+	int (*draw)(const struct gbm *gbm, const struct egl *egl);
 };
 
 struct drm_fb {
@@ -606,6 +607,157 @@ static int atomic_run(const struct gbm *gbm, const struct egl *egl)
 	return ret;
 }
 
+static int atomic_draw(const struct gbm *gbm, const struct egl *egl)
+{
+	static struct gbm_bo *bo = NULL;
+	struct drm_fb *fb;
+	static uint32_t i = 0;
+	static uint32_t flags = DRM_MODE_ATOMIC_NONBLOCK;
+	static uint64_t start_time = 0;
+	static uint64_t report_time, cur_time;
+	int ret;
+
+	if (!start_time) {
+		if (egl_check(egl, eglDupNativeFenceFDANDROID) ||
+			egl_check(egl, eglCreateSyncKHR) ||
+			egl_check(egl, eglDestroySyncKHR) ||
+			egl_check(egl, eglWaitSyncKHR) ||
+			egl_check(egl, eglClientWaitSyncKHR))
+			return -1;
+
+		/* Allow a modeset change for the first commit only. */
+		flags |= DRM_MODE_ATOMIC_ALLOW_MODESET;
+
+		start_time = report_time = get_time_ns();
+	}
+
+	unsigned frame = i;
+	struct gbm_bo *next_bo;
+	EGLSyncKHR gpu_fence = NULL;   /* out-fence from gpu, in-fence to kms */
+	EGLSyncKHR kms_fence = NULL;   /* in-fence to gpu, out-fence from kms */
+
+	if (_drm.kms_out_fence_fd != -1) {
+		kms_fence = create_fence(egl, _drm.kms_out_fence_fd);
+		assert(kms_fence);
+
+		/* driver now has ownership of the fence fd: */
+		_drm.kms_out_fence_fd = -1;
+
+		/* wait "on the gpu" (ie. this won't necessarily block, but
+		 * will block the rendering until fence is signaled), until
+		 * the previous pageflip completes so we don't render into
+		 * the buffer that is still on screen.
+		 */
+		egl->eglWaitSyncKHR(egl->display, kms_fence, 0);
+	}
+
+	/* Start fps measuring on second frame, to remove the time spent
+	 * compiling shader, etc, from the fps:
+	 */
+	if (i == 1) {
+		start_time = report_time = get_time_ns();
+	}
+
+	if (!gbm->surface) {
+		glBindFramebuffer(GL_FRAMEBUFFER, egl->fbs[frame % NUM_BUFFERS].fb);
+	}
+
+	egl->draw(start_time, i++);
+
+	/* insert fence to be singled in cmdstream.. this fence will be
+	 * signaled when gpu rendering done
+	 */
+	gpu_fence = create_fence(egl, EGL_NO_NATIVE_FENCE_FD_ANDROID);
+	assert(gpu_fence);
+
+	if (gbm->surface) {
+		eglSwapBuffers(egl->display, egl->surface);
+	}
+
+	/* after swapbuffers, gpu_fence should be flushed, so safe
+	 * to get fd:
+	 */
+	_drm.kms_in_fence_fd = egl->eglDupNativeFenceFDANDROID(egl->display, gpu_fence);
+	egl->eglDestroySyncKHR(egl->display, gpu_fence);
+	assert(_drm.kms_in_fence_fd != -1);
+
+	if (gbm->surface) {
+		next_bo = gbm_surface_lock_front_buffer(gbm->surface);
+	} else {
+		next_bo = gbm->bos[frame % NUM_BUFFERS];
+	}
+	if (!next_bo) {
+		printf("Failed to lock frontbuffer\n");
+		return -1;
+	}
+	fb = drm_fb_get_from_bo(next_bo);
+	if (!fb) {
+		printf("Failed to get a new framebuffer BO\n");
+		return -1;
+	}
+
+	if (kms_fence) {
+		EGLint status;
+
+		/* Wait on the CPU side for the _previous_ commit to
+		 * complete before we post the flip through KMS, as
+		 * atomic will reject the commit if we post a new one
+		 * whilst the previous one is still pending.
+		 */
+		do {
+			status = egl->eglClientWaitSyncKHR(egl->display,
+							   kms_fence,
+							   0,
+							   EGL_FOREVER_KHR);
+		} while (status != EGL_CONDITION_SATISFIED_KHR);
+
+		egl->eglDestroySyncKHR(egl->display, kms_fence);
+	}
+
+#if 0
+	cur_time = get_time_ns();
+	if (cur_time > (report_time + 2 * NSEC_PER_SEC)) {
+		double elapsed_time = cur_time - start_time;
+		double secs = elapsed_time / (double)NSEC_PER_SEC;
+		unsigned frames = i - 1;  /* first frame ignored */
+		printf("Rendered %u frames in %f sec (%f fps)\n",
+			frames, secs, (double)frames/secs);
+		report_time = cur_time;
+	}
+#endif
+
+	/* Check for user input: */
+/*	struct pollfd fdset[] = { {
+		.fd = STDIN_FILENO,
+		.events = POLLIN,
+	} };
+	ret = poll(fdset, ARRAY_SIZE(fdset), 0);
+	if (ret > 0) {
+		printf("user interrupted!\n");
+		return 0;
+	}*/
+
+	/*
+	 * Here you could also update drm plane layers if you want
+	 * hw composition
+	 */
+	ret = drm_atomic_commit(fb->fb_id, flags);
+	if (ret) {
+		printf("failed to commit: %s\n", strerror(errno));
+		return -1;
+	}
+
+	/* release last buffer to render on again: */
+	if (bo && gbm->surface)
+		gbm_surface_release_buffer(gbm->surface, bo);
+	bo = next_bo;
+
+	/* Allow a modeset change for the first commit only. */
+	flags &= ~(DRM_MODE_ATOMIC_ALLOW_MODESET);
+
+	return ret;
+}
+
 /* Pick a plane.. something that at a minimum can be connected to
  * the chosen crtc, but prefer primary plane.
  *
@@ -731,6 +883,7 @@ const struct drm * init_drm_atomic(const char *device, const char *mode_str,
 	get_properties(connector, CONNECTOR, _drm.connector_id);
 
 	_drm.run = atomic_run;
+	_drm.draw = atomic_draw;
 
 	return &_drm;
 }
@@ -1316,8 +1469,8 @@ static int legacy_run(const struct gbm *gbm, const struct egl *egl)
 {
 	fd_set fds;
 	drmEventContext evctx = {
-			.version = 2,
-			.page_flip_handler = page_flip_handler,
+		.version = 2,
+		.page_flip_handler = page_flip_handler,
 	};
 	struct gbm_bo *bo;
 	struct drm_fb *fb;
@@ -1440,6 +1593,126 @@ static int legacy_run(const struct gbm *gbm, const struct egl *egl)
 	return 0;
 }
 
+static int legacy_draw(const struct gbm *gbm, const struct egl *egl)
+{
+	fd_set fds;
+	drmEventContext evctx = {
+		.version = 2,
+		.page_flip_handler = page_flip_handler,
+	};
+	static struct gbm_bo *bo;
+	struct drm_fb *fb;
+	static uint32_t i = 0;
+	static uint64_t start_time = 0;
+	static uint64_t report_time, cur_time;
+	int ret;
+
+	if (!start_time) {
+		if (gbm->surface) {
+			eglSwapBuffers(egl->display, egl->surface);
+			bo = gbm_surface_lock_front_buffer(gbm->surface);
+		} else {
+			bo = gbm->bos[0];
+		}
+		fb = drm_fb_get_from_bo(bo);
+		if (!fb) {
+			fprintf(stderr, "Failed to get a new framebuffer BO\n");
+			return -1;
+		}
+
+		/* set mode: */
+		ret = drmModeSetCrtc(kg_drm.fd, kg_drm.crtc_id, fb->fb_id, 0, 0,
+				&kg_drm.connector_id, 1, kg_drm.mode);
+		if (ret) {
+			printf("failed to set mode: %s\n", strerror(errno));
+			return ret;
+		}
+
+		start_time = report_time = get_time_ns();
+	}
+
+	unsigned frame = i;
+	struct gbm_bo *next_bo;
+	int waiting_for_flip = 1;
+
+	/* Start fps measuring on second frame, to remove the time spent
+	 * compiling shader, etc, from the fps:
+	 */
+	if (i == 1) {
+		start_time = report_time = get_time_ns();
+	}
+
+	if (!gbm->surface) {
+		glBindFramebuffer(GL_FRAMEBUFFER, egl->fbs[frame % NUM_BUFFERS].fb);
+	}
+
+	egl->draw(start_time, i++);
+
+	if (gbm->surface) {
+		eglSwapBuffers(egl->display, egl->surface);
+		next_bo = gbm_surface_lock_front_buffer(gbm->surface);
+	} else {
+		glFinish();
+		next_bo = gbm->bos[frame % NUM_BUFFERS];
+	}
+	fb = drm_fb_get_from_bo(next_bo);
+	if (!fb) {
+		fprintf(stderr, "Failed to get a new framebuffer BO\n");
+		return -1;
+	}
+
+	/*
+	 * Here you could also update drm plane layers if you want
+	 * hw composition
+	 */
+
+	ret = drmModePageFlip(kg_drm.fd, kg_drm.crtc_id, fb->fb_id,
+			DRM_MODE_PAGE_FLIP_EVENT, &waiting_for_flip);
+	if (ret) {
+		printf("failed to queue page flip: %s\n", strerror(errno));
+		return -1;
+	}
+
+	while (waiting_for_flip) {
+		FD_ZERO(&fds);
+		FD_SET(0, &fds);
+		FD_SET(kg_drm.fd, &fds);
+
+		ret = select(kg_drm.fd + 1, &fds, NULL, NULL, NULL);
+		if (ret < 0) {
+			printf("select err: %s\n", strerror(errno));
+			return ret;
+		} else if (ret == 0) {
+			printf("select timeout!\n");
+			return -1;
+		/*} else if (FD_ISSET(0, &fds)) {
+			printf("user interrupted!\n");
+			return 0;*/
+		}
+		drmHandleEvent(kg_drm.fd, &evctx);
+	}
+
+#if 0
+	cur_time = get_time_ns();
+	if (cur_time > (report_time + 2 * NSEC_PER_SEC)) {
+		double elapsed_time = cur_time - start_time;
+		double secs = elapsed_time / (double)NSEC_PER_SEC;
+		unsigned frames = i - 1;  /* first frame ignored */
+		printf("Rendered %u frames in %f sec (%f fps)\n",
+			frames, secs, (double)frames/secs);
+		report_time = cur_time;
+	}
+#endif
+
+	/* release last buffer to render on again: */
+	if (gbm->surface) {
+		gbm_surface_release_buffer(gbm->surface, bo);
+	}
+	bo = next_bo;
+
+	return 0;
+}
+
 const struct drm * init_drm_legacy(const char *device, const char *mode_str,
 		unsigned int vrefresh, unsigned int count)
 {
@@ -1450,6 +1723,7 @@ const struct drm * init_drm_legacy(const char *device, const char *mode_str,
 		return NULL;
 
 	kg_drm.run = legacy_run;
+	kg_drm.draw = legacy_draw;
 
 	return &kg_drm;
 }
@@ -1598,6 +1872,32 @@ static void draw_shadertoy(uint64_t start_time, unsigned frame) {
 	end_perfcntrs();
 }
 
+static GLint sampler_channel[4];
+static GLuint sampler_channel_ID[4];
+static void update_texture(int n, unsigned char* data, int w, int h)
+{
+	glActiveTexture(GL_TEXTURE0 + n);
+	glBindTexture(GL_TEXTURE_2D, sampler_channel_ID[n]);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, w, h, 0, GL_RED, GL_UNSIGNED_BYTE, data);
+	glUniform1i(sampler_channel[n], n);
+}
+static void texture_bind(unsigned char* data, int w, int h)
+{
+	for (int i=/*0*/3; i<4; ++i) {
+		if (sampler_channel[i] < 0) {
+//			info("Skipping data for unused iChannel%d\n", i);
+		} else {
+//			info("Binding data for iChannel%d\n", i);
+			glGenTextures(1, &sampler_channel_ID[i]);
+			update_texture(i, data, 256, 3);
+			break;
+		}
+	}
+	glActiveTexture(GL_TEXTURE0);
+}
+
 int init_shadertoy(const struct gbm *gbm, struct egl *egl, const char *file) {
 	int ret;
 	char *shadertoy_fs;
@@ -1625,6 +1925,19 @@ int init_shadertoy(const struct gbm *gbm, struct egl *egl, const char *file) {
 	iTime = glGetUniformLocation(program, "iTime");
 	iFrame = glGetUniformLocation(program, "iFrame");
 	iResolution = glGetUniformLocation(program, "iResolution");
+//	attrib_position = glGetAttribLocation(shader_program, "iPosition");
+	sampler_channel[0] = glGetUniformLocation(program, "iChannel0");
+	sampler_channel[1] = glGetUniformLocation(program, "iChannel1");
+	sampler_channel[2] = glGetUniformLocation(program, "iChannel2");
+	sampler_channel[3] = glGetUniformLocation(program, "iChannel3");
+/*	uniform_cres = glGetUniformLocation(shader_program, "iChannelResolution");
+	uniform_ctime = glGetUniformLocation(shader_program, "iChannelTime");
+	uniform_date = glGetUniformLocation(shader_program, "iDate");
+	uniform_gtime = glGetUniformLocation(shader_program, "iGlobalTime");
+	uniform_time = glGetUniformLocation(shader_program, "iTime");
+	uniform_mouse = glGetUniformLocation(shader_program, "iMouse");
+	uniform_res = glGetUniformLocation(shader_program, "iResolution");
+	uniform_srate = glGetUniformLocation(shader_program, "iSampleRate");*/
 	glUniform3f(iResolution, gbm->width, gbm->height, 0);
 	glGenBuffers(1, &vbo);
 	glBindBuffer(GL_ARRAY_BUFFER, vbo);
