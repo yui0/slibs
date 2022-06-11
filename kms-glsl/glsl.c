@@ -182,5 +182,10 @@ int main(int argc, char *argv[]) {
 	glClearColor(0.5, 0.5, 0.5, 1.0);
 	glClear(GL_COLOR_BUFFER_BIT);
 
-	return drm->run(gbm, egl);
+	drm->run(gbm, egl);
+
+	finish_egl();
+//	finish_gbm();
+	finish_drm();
+//	return drm->run(gbm, egl);
 }

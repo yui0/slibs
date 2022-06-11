@@ -1,3 +1,4 @@
+// https://qiita.com/Pctg-x8/items/52c7e018556ec5c867de
 // drm-common.h
 /*
  * Copyright (c) 2017 Rob Clark <rclark@redhat.com>
@@ -55,6 +56,7 @@ struct drm {
 	/* only used for atomic: */
 	struct plane *plane;
 	struct crtc *crtc;
+	drmModeCrtc *orig_crtc;
 	struct connector *connector;
 	int crtc_index;
 	int kms_in_fence_fd;
@@ -1029,6 +1031,12 @@ const struct gbm * init_gbm(int drm_fd, int w, int h, uint32_t format,
 	return init_surface(modifier);
 }
 
+void finish_gbm()
+{
+	if (kg_gbm.surface) gbm_surface_destroy(kg_gbm.surface);
+	gbm_device_destroy(kg_gbm.dev);
+}
+
 static bool has_ext(const char *extension_list, const char *ext)
 {
 	const char *ptr = extension_list;
@@ -1191,7 +1199,7 @@ create_framebuffer(const struct egl *egl, struct gbm_bo *bo,
 	return true;
 }
 
-const struct egl * init_egl(const struct gbm *gbm)
+const struct egl *init_egl(const struct gbm *gbm)
 {
 	EGLint major, minor;
 
@@ -1328,6 +1336,15 @@ const struct egl * init_egl(const struct gbm *gbm)
 	}
 
 	return &kg_egl;
+}
+
+void finish_egl()
+{
+	// Release context resources
+	eglMakeCurrent(kg_egl.display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+	eglDestroySurface(kg_egl.display, kg_egl.surface);
+	eglDestroyContext(kg_egl.display, kg_egl.context);
+	eglTerminate(kg_egl.display);
 }
 
 int create_program(const char *vs_src, const char *fs_src)
@@ -2765,5 +2782,21 @@ int init_drm(struct drm *drm, const char *device, const char *mode_str,
 	drm->connector_id = connector->connector_id;
 	drm->count = count;
 
+	// backup original crtc so we can restore the original video mode on exit.
+	drm->orig_crtc = drmModeGetCrtc(drm->fd, encoder->crtc_id);
+
 	return 0;
+}
+
+void finish_drm()
+{
+	// Restore the original videomode/connector/scanoutbuffer combination (the original CRTC, that is). 
+	drmModeSetCrtc(kg_drm.fd, kg_drm.orig_crtc->crtc_id, kg_drm.orig_crtc->buffer_id,
+		kg_drm.orig_crtc->x, kg_drm.orig_crtc->y, &kg_drm.connector_id, 1, &kg_drm.orig_crtc->mode);
+
+	/*if (fb->fb_id) {
+		drmModeRmFB(drm.fd, fb->fb_id);
+	}*/
+
+	close(kg_drm.fd);
 }
