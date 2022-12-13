@@ -104,6 +104,7 @@ static GLint uniform_gtime;
 static GLint uniform_time;
 static GLint iFrame;
 static GLint uniform_mouse;
+static GLint uniform_scroll;
 static GLint uniform_res;
 static GLint uniform_srate;
 
@@ -402,6 +403,16 @@ static void mouse_button_callback(GLFWwindow* window, int button, int action, in
 	}
 	glUniform4f(uniform_mouse, mouseX, mouseY, mouseLPressed, mouseRPressed);
 }
+
+static void mouse_scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
+{
+	static double x = 0;
+	static double y = 0;
+	x += xoffset;
+	y += yoffset;
+	printf("scroll %f,%f\n", x, y);
+	glUniform2f(uniform_scroll, x, y);
+}
 #endif
 
 static char* read_file_into_str(const char *filename)
@@ -524,6 +535,7 @@ GLuint st_init(int width, int height, const char *file)
 	uniform_gtime = glGetUniformLocation(shader_program, "iGlobalTime");
 	uniform_time = glGetUniformLocation(shader_program, "iTime");
 	uniform_mouse = glGetUniformLocation(shader_program, "iMouse");
+	uniform_scroll = glGetUniformLocation(shader_program, "iScroll");
 	uniform_res = glGetUniformLocation(shader_program, "iResolution");
 	uniform_srate = glGetUniformLocation(shader_program, "iSampleRate");
 
@@ -539,6 +551,7 @@ GLuint st_init(int width, int height, const char *file)
 #ifdef USE_GLFW
 	glfwSetCursorPosCallback(window, &cursor_position_callback);
 	glfwSetMouseButtonCallback(window, &mouse_button_callback);
+	glfwSetScrollCallback(window, &mouse_scroll_callback);
 	glfwSetKeyCallback(window, &key_callback);
 	glfwSetFramebufferSizeCallback(window, &resize_viewport);
 #endif

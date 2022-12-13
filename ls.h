@@ -1,5 +1,5 @@
 /* public domain Simple, Minimalistic, making list of files and directories
- *	©2017-2018 Yuichiro Nakada
+ *	©2017-2020 Yuichiro Nakada
  *
  * Basic usage:
  *	int num;
@@ -10,6 +10,45 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <sys/stat.h>
+
+//#define RANDOM_DEVICE "/dev/random"
+#define RANDOM_DEVICE "/dev/urandom"
+int urandom;
+inline void urandom_init()
+{
+	urandom = open(RANDOM_DEVICE, O_RDONLY);
+	if (urandom<0) {
+		fprintf(stderr, "Failed to open %s\n", RANDOM_DEVICE);
+		exit(EXIT_FAILURE);
+	}
+}
+inline uint32_t urandom_number()
+{
+	uint32_t c;
+	read(urandom, &c, sizeof(c));
+	return c;
+}
+inline void urandom_end()
+{
+	close(urandom);
+}
+/*static FILE *urandom;
+inline void urandom_init()
+{
+	urandom = fopen(RANDOM_DEVICE, "rb");
+	if (urandom == NULL) {
+		fprintf(stderr, "Failed to open %s\n", RANDOM_DEVICE);
+		exit(EXIT_FAILURE);
+	}
+}
+inline int urandom_number()
+{
+	return fgetc(urandom);
+}
+inline void urandom_end()
+{
+	fclose(urandom);
+}*/
 
 #define LS_RECURSIVE	1
 #define LS_RANDOM	2
@@ -124,20 +163,25 @@ LS_LIST *ls_dir(char *dir, int flag, int *num)
 
 	if (flag & LS_RANDOM) {
 #ifdef RANDOM_H
-		xor128_init(time(NULL));
+//		xor128_init(time(NULL));
+		urandom_init();
 #else
 		srand(time(NULL));
 #endif
-		for (int i=0; i<n; i++) {
+		for (int i=n-1; i>=0; i--) { // Fisher-Yates shuffle
 #ifdef RANDOM_H
-			int a = frand() * n;
+//			int a = frand() * n;
+			int a = (urandom_number() / 4294967295.0)*n;
 #else
-			int a = rand()%n;
+			int a = (rand() / RAND_MAX)*n;
 #endif
 			LS_LIST b = ls[i];
 			ls[i] = ls[a];
 			ls[a] = b;
 		}
+#ifdef RANDOM_H
+		urandom_end();
+#endif
 	} else {
 		qsort(ls, n, sizeof(LS_LIST), ls_comp_func);
 	}
