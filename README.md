@@ -35,6 +35,7 @@ Single file libraries for C/C++.
 |**[ocl.h](ocl.h)** | GPGPU | 190 | public domain | [OpenCL frameworks](https://github.com/yui0/waifu2x-ocl)
 | --------------------- | -------- | --- | --- | --------------------------------
 |**[clock.h](clock.h)** | utils | 31 | public domain | clock function for linux [ref: https://github.com/yui0/waifu2x-glsl]
+|**[ht.h](ht.h)** | utils | 330 | MIT | hash table
 |**[kbhit.h](kbhit.h)** | utils | 64 | public domain | kbhit function for linux [ref: https://github.com/yui0/aplay-]
 |**[ls.h](ls.h)** | utils | 155 | public domain | making list of files and directories [ref: https://github.com/yui0/aplay-]
 | --------------------- | -------- | --- | --- | --------------------------------
