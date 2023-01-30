@@ -1,10 +1,16 @@
 /* public domain Simple, Minimalistic, making list of files and directories
- *	©2017-2020 Yuichiro Nakada
+ *	©2017-2023 Yuichiro Nakada
  *
  * Basic usage:
  *	int num;
  *	LS_LIST *ls = ls_dir("dir/", LS_RECURSIVE|LS_RANDOM, &num);
  * */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+#include <fcntl.h>
 
 #include <time.h>
 #include <unistd.h>
@@ -145,8 +151,11 @@ int ls_comp_func(const void *a, const void *b)
 	return (strcmp((char*)(((LS_LIST*)a)->d_name), (char*)(((LS_LIST*)b)->d_name)));
 }
 
-LS_LIST *ls_dir(char *dir, int flag, int *num)
+LS_LIST *ls_dir(char *_dir, int flag, int *num)
 {
+	char dir[PATH_MAX+1];
+	realpath(_dir, dir);
+
 	int n = ls_count_dir(dir, flag)+1; // FIXME: +1 ??
 	if (!n) {
 		fprintf(stderr, "No file found in %s\n", dir);
@@ -203,3 +212,17 @@ char *findExt(char *path)
 	}
 	return e+1;
 }
+
+#if 0
+int main(int argc, char *argv[])
+{
+	int num = 0;
+	LS_LIST *ls = ls_dir(argv[1], LS_RECURSIVE, &num);
+	for (int i=0; i<num; i++) {
+		printf("%s\n", ls[i].d_name);
+	}
+	free(ls);
+
+	return 0;
+}
+#endif

@@ -113,7 +113,7 @@ void* ht_get(ht* table, const char* key)
 	return NULL;
 }
 
-int ht_get_index(ht* this, const char* key)
+size_t ht_get_index(ht* this, const char* key)
 {
 	// AND hash with capacity-1 to ensure it's within entries array.
 	uint64_t hash = hash_key(key);
@@ -136,7 +136,7 @@ int ht_get_index(ht* this, const char* key)
 }
 int ht_del(ht *this, const char *key)
 {
-	int i = ht_get_index(this, key);
+	size_t i = ht_get_index(this, key);
 	if (i<0) return 0;
 //	free((void*)this->entries[i].key);
 	char *p = (char*)this->entries[i].key;
