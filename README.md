@@ -1,8 +1,8 @@
 # slibs
 
-![GitHub Repo stars](https://img.shields.io/github/stars/yui0/slibs-?style=social)
-![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/yui0/slibs-)
-![Lines of code](https://img.shields.io/tokei/lines/github/yui0/slibs-)
+![GitHub Repo stars](https://img.shields.io/github/stars/yui0/slibs?style=social)
+![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/yui0/slibs)
+![Lines of code](https://img.shields.io/tokei/lines/github/yui0/slibs)
 
 Single file libraries for C/C++.
 
