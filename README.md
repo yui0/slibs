@@ -1,5 +1,9 @@
 # slibs
 
+![GitHub Repo stars](https://img.shields.io/github/stars/yui0/aplay-?style=social)
+![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/yui0/aplay-)
+![Lines of code](https://img.shields.io/tokei/lines/github/yui0/aplay-)
+
 Single file libraries for C/C++.
 
 |library | category | LoC | license | description

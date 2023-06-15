@@ -20,7 +20,7 @@
 //#define RANDOM_DEVICE "/dev/random"
 #define RANDOM_DEVICE "/dev/urandom"
 int urandom;
-inline void urandom_init()
+void urandom_init()
 {
 	urandom = open(RANDOM_DEVICE, O_RDONLY);
 	if (urandom<0) {
@@ -28,13 +28,13 @@ inline void urandom_init()
 		exit(EXIT_FAILURE);
 	}
 }
-inline uint32_t urandom_number()
+uint32_t urandom_number()
 {
 	uint32_t c;
 	read(urandom, &c, sizeof(c));
 	return c;
 }
-inline void urandom_end()
+void urandom_end()
 {
 	close(urandom);
 }
