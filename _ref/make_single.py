@@ -1,6 +1,6 @@
 #! /usr/bin/python
 # -*- coding: utf-8 -*-
-# ©2022 Yuichiro Nakada
+# ©2022-2023 Yuichiro Nakada
 
 # python3 make_single.py .
 
@@ -13,6 +13,7 @@ path = sys.argv[1]
 files = glob.glob(path + '/*.[ch]')
 #print(files)
 
+# check dependencies
 pattern = '(?<=include ").*(?=")'
 d = {}
 for p in files:
@@ -30,6 +31,7 @@ for p in files:
 print('Dependencies: ')
 print(d)
 
+# check orders
 order = []
 for k, v in d.items():
     if len(v) == 0: # dependencies is 0
@@ -38,10 +40,10 @@ for k, v in d.items():
 
 for k2, v2 in d.items():
     for k, v in d.items():
-        flag = 0
+        ordered = 0
         for l in v:
-            if l in order: flag = flag + 1
-        if len(v) == flag:
+            if l in order: ordered = ordered + 1
+        if len(v) == ordered:
             if k not in order: order.append(k)
 
 print('')
