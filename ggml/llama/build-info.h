@@ -1,7 +1,7 @@
 #ifndef BUILD_INFO_H
 #define BUILD_INFO_H
 
-#define BUILD_NUMBER 0
-#define BUILD_COMMIT "unknown"
+#define BUILD_NUMBER "2023-07-14"
+#define BUILD_COMMIT "Yuichiro Nakada"
 
 #endif // BUILD_INFO_H
