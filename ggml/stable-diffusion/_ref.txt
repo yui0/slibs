@@ -1,0 +1,5 @@
+gcc -O3 -DNDEBUG -march=native -mavx -mf16c -msse3 -ffast-math -fno-omit-frame-pointer -c ggml.c
+g++ -o sd -O3 main.cpp stable-diffusion.cpp ggml.o
+
+python3 convert.py model.safetensors --out_type f16
+
