@@ -31,6 +31,7 @@ Single file libraries for C/C++.
 |**[fmath.h](fmath.h)** | math | 142 | public domain | Fast math library
 |**[random.h](random.h)** | math | 33 | public domain | XOR128 random function
 |**[ggml.h](ggml/ggml.h)** | math | 20352 | MIT | [Tensor library for machine learning](https://github.com/ggerganov/ggml)
+|> |Llama 2, RedPajama, Stable Diffusion|||
 | --------------------- | -------- | --- | --- | --------------------------------
 |**[sgemm_sse.h](sgemm_sse.h)** | math | 451 | public domain | [Fast GEMM function for SSE](https://github.com/yui0/ugemm)
 |**[sgemm_ocl.h](sgemm_ocl.h)** | GPGPU/math | 662 | public domain | [Fast GEMM function for OpenCL](https://github.com/yui0/ugemm)
