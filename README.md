@@ -20,7 +20,7 @@ Single file libraries for C/C++.
 |**[jo_mpeg.h](jo_mpeg.h)** | video | 317 | public domain | [MPEG1/2 encoder](http://www.jonolick.com/home/mpeg-video-writer)
 | --------------------- | -------- | --- | --- | --------------------------------
 |**[imgp.h](imgp.h)** | image | 441 | public domain | mini image processing library
-|**[potracelib.h](potracelib.h)** | image | 2466 | GPL | [Transforming bitmaps into vector graphics](http://potrace.sourceforge.net/), [Document](http://potrace.sourceforge.net/potracelib.pdf), [Example](https://github.com/yui0/img2vec)]
+|**[potracelib.h](potracelib.h)** | <details><summary>image</summary>[Document](http://potrace.sourceforge.net/potracelib.pdf), [Example](https://github.com/yui0/img2vec)</details> | 2466 | GPL | [Transforming bitmaps into vector graphics](http://potrace.sourceforge.net/)
 |**[pssub.h](pssub.h)** | image | 25689 | unknown | Postscript library
 |**[svg.h](svg.h)** | image | 21735 | Apache-2.0 | SVG library
 | --------------------- | -------- | --- | --- | --------------------------------
@@ -30,8 +30,7 @@ Single file libraries for C/C++.
 |**[ifft.h](fft.h)** | math | 19875 | unknown | Fixed-point in-place Fast Fourier Transform
 |**[fmath.h](fmath.h)** | math | 142 | public domain | Fast math library
 |**[random.h](random.h)** | math | 33 | public domain | XOR128 random function
-|**[ggml.h](ggml/ggml.h)** | math | 20352 | MIT | [Tensor library for machine learning](https://github.com/ggerganov/ggml)
-|> |Llama 2, RedPajama, Stable Diffusion|||
+|**[ggml.h](ggml/ggml.h)** | <details><summary>math</summary>Llama 2, RedPajama, Stable Diffusion</details> | 20352 | MIT | [Tensor library for machine learning](https://github.com/ggerganov/ggml)
 | --------------------- | -------- | --- | --- | --------------------------------
 |**[sgemm_sse.h](sgemm_sse.h)** | math | 451 | public domain | [Fast GEMM function for SSE](https://github.com/yui0/ugemm)
 |**[sgemm_ocl.h](sgemm_ocl.h)** | GPGPU/math | 662 | public domain | [Fast GEMM function for OpenCL](https://github.com/yui0/ugemm)
@@ -40,20 +39,20 @@ Single file libraries for C/C++.
 |**[gpgpu_gl4.h](gpgpu_gl4.h)** | GPGPU | 170 | public domain | [OpenGL compute shader frameworks](https://github.com/yui0/waifu2x-glsl)
 |**[ocl.h](ocl.h)** | GPGPU | 190 | public domain | [OpenCL frameworks](https://github.com/yui0/waifu2x-ocl)
 | --------------------- | -------- | --- | --- | --------------------------------
-|**[clock.h](clock.h)** | utils | 31 | public domain | clock function for linux [ref: https://github.com/yui0/waifu2x-glsl]
+|**[clock.h](clock.h)** | <details><summary>utils</summary>[ref.](https://github.com/yui0/waifu2x-glsl)</details> | 31 | public domain | clock function for linux
 |**[ht.h](ht.h)** | utils | 330 | MIT | hash table
-|**[kbhit.h](kbhit.h)** | utils | 64 | public domain | kbhit function for linux [ref: https://github.com/yui0/aplay-]
-|**[ls.h](ls.h)** | utils | 155 | public domain | making list of files and directories [ref: https://github.com/yui0/aplay-]
+|**[kbhit.h](kbhit.h)** | <details><summary>utils</summary>[ref.](https://github.com/yui0/aplay-)</details> | 64 | public domain | kbhit function for linux
+|**[ls.h](ls.h)** | utils | 155 | <details><summary>public domain</summary>[ref.](https://github.com/yui0/aplay-)</details> | making list of files and directories
 | --------------------- | -------- | --- | --- | --------------------------------
 |**[aimage.h](aimage.h)** | utils | 321 | public domain | Image Viewer for Console
-|**[mcurses.h](mcurses.h)** | utils | 1481 | GPL-2 | "[mcurses](https://github.com/ChrisMicro/mcurses)" is a minimized version of programming library ncurses [ref: https://github.com/yui0/aplay-]
-|**[termbox.h](termbox.h)** | utils | 1719 | MIT | Library for writing text-based user interfaces [https://github.com/nsf/termbox]
+|**[mcurses.h](mcurses.h)** | <details><summary>utils</summary>[ref.](https://github.com/yui0/aplay-)</details> | 1481 | GPL-2 | "[mcurses](https://github.com/ChrisMicro/mcurses)" is a minimized version of programming library ncurses
+|**[termbox.h](termbox.h)** | <details><summary>utils</summary>[ref.](https://github.com/nsf/termbox)</details> | 1719 | MIT | Library for writing text-based user interfaces
 | --------------------- | -------- | --- | --- | --------------------------------
 |**[csv.h](csv.h)** | utils | 77 | public domain | CSV file parser
 |**[ini.h](ini.h)** | utils | 250 | BSD | ini file parser
-|**[parg.h](parg.h)** | utils | 551 | CC0 | Parser for argv that works similarly to getopt [https://github.com/jibsen/parg]
-|**[parson.h](parson.h)** | utils | 2239 | MIT | Lightweight JSON library [https://github.com/kgabis/parson]
-|**[utf8.h](utf8.h)** | utils | 1123 | GPL2 | UTF8 decoder and encoder library [http://www.ne.jp/asahi/maoyam/hp/UTF-8]
+|**[parg.h](parg.h)** | <details><summary>utils</summary>[ref.](https://github.com/jibsen/parg)</details> | 551 | CC0 | Parser for argv that works similarly to getopt
+|**[parson.h](parson.h)** | <details><summary>utils</summary>[ref.](https://github.com/kgabis/parson)</details> | 2239 | MIT | Lightweight JSON library
+|**[utf8.h](utf8.h)** | <details><summary>utils</summary>[ref.](http://www.ne.jp/asahi/maoyam/hp/UTF-8)</details> | 1123 | GPL2 | UTF8 decoder and encoder library
 
 ## References
 - [A single-header ANSI C gui library](https://github.com/vurtun/nuklear)

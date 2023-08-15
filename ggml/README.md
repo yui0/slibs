@@ -3,7 +3,7 @@
 ### How to build and use
 
 ```
-$make
+$ make
 
 Downloading ggml model 117M ...
 Done! Model '117M' saved in 'models/gpt-2-117M/ggml-model.bin'
