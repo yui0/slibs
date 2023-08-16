@@ -10,7 +10,8 @@ $ g++ -o sd -O3 main.cpp stable-diffusion.cpp ggml.o
 ### How to convert the model
 
 ```
-$ python3 convert.py model.safetensors --out_type f16
+$ wget https://huggingface.co/OedoSoldier/ambientmix/resolve/main/ambientmix-half.safetensors
+$ python3 convert.py ambientmix-half.safetensors --out_type f16
 ```
 
 ### How to use
@@ -40,6 +41,7 @@ $ ./sd -p "masterpiece, best quality, ultra-detailed, illustration, 1girl, solo,
 ```
 
 ![Mountain Girl](mountain.png)
+![Mountain Girl](mountain_20.png)
 
 ###
 

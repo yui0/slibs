@@ -582,6 +582,8 @@ extern "C" {
     GGML_API void    ggml_free_dynamic_tensor(struct ggml_tensor * tensor);
     GGML_API size_t  ggml_dynamic_size(void);
     GGML_API size_t  ggml_max_dynamic_size(void);
+    GGML_API size_t  ggml_curr_max_dynamic_size(void);
+    GGML_API void    ggml_reset_curr_max_dynamic_size(void);
 
 
     GGML_API void *  ggml_get_mem_buffer     (const struct ggml_context * ctx);
@@ -5791,7 +5793,6 @@ void ggml_cl_transform_tensor(void * data, struct ggml_tensor * tensor);
 
 // ggml.c
 #ifdef GGML_IMPLEMENTATION
-
 #define _GNU_SOURCE // Defines CLOCK_MONOTONIC on Linux
 #define _CRT_SECURE_NO_DEPRECATE // Disables ridiculous "unsafe" warnigns on Windows
 
@@ -6021,11 +6022,16 @@ inline static void* ggml_aligned_malloc(size_t size) {
 size_t dynamic_mem_size = 0;
 size_t max_dynamic_mem_size = 0;
 
+size_t curr_max_dynamic_mem_size = 0;
+
 inline static void* ggml_dynamic_malloc(size_t size) {
     void *ptr = GGML_ALIGNED_MALLOC(GGML_MEM_ALIGN + size);
     dynamic_mem_size += size;
     if (dynamic_mem_size > max_dynamic_mem_size) {
         max_dynamic_mem_size = dynamic_mem_size;
+    }
+    if (dynamic_mem_size > curr_max_dynamic_mem_size) {
+        curr_max_dynamic_mem_size = dynamic_mem_size;
     }
     *((size_t*)ptr) = size;
     return (char*)ptr + GGML_MEM_ALIGN;
@@ -6044,6 +6050,14 @@ size_t  ggml_dynamic_size(void) {
 
 size_t  ggml_max_dynamic_size(void) {
     return max_dynamic_mem_size;
+}
+
+size_t  ggml_curr_max_dynamic_size(void) {
+    return curr_max_dynamic_mem_size;
+}
+
+void  ggml_reset_curr_max_dynamic_size(void) {
+    curr_max_dynamic_mem_size = dynamic_mem_size;
 }
 
 #define GGML_DYNAMIC_MALLOC(size)  ggml_dynamic_malloc(size)
@@ -25015,7 +25029,6 @@ int ggml_cpu_has_vsx(void) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
 #endif
 
 
