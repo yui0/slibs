@@ -48,12 +48,6 @@ $ ./sd -p "illustration, (high resolution)++, 8k+, attractive, highly detailed, 
 
 ### Samples
 
-![Mountain Girl](mountain_0.png)
-![Mountain Girl](mountain_0_.png)
-![Mountain Girl](mountain_1.png)
-![Mountain Girl](mountain_20.png)
-![Mountain Girl](mountain_100.png)
-
 ![Sunflower](sunflower_10.png)
 ![Sunflower](sunflower_10_.png)
 ![Sunflower](sunflower_20.png)
@@ -62,6 +56,12 @@ $ ./sd -p "illustration, (high resolution)++, 8k+, attractive, highly detailed, 
 ![Hanfu](hanfu_1.png)
 
 ![Akihabara](akihabara_10.png)
+
+![Mountain Girl](mountain_0.png)
+![Mountain Girl](mountain_0_.png)
+![Mountain Girl](mountain_1.png)
+![Mountain Girl](mountain_20.png)
+![Mountain Girl](mountain_100.png)
 
 ### ref.
 
