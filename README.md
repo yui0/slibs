@@ -26,6 +26,7 @@ Single file libraries for C/C++.
 | --------------------- | -------- | --- | --- | --------------------------------
 |**[kms-glsl.h](kms-glsl.h)** | OpenGL | 2426 | MIT | [OpenGL using the DRM/KMS](https://ttt.io/glsl-raspberry-pi)
 | --------------------- | -------- | --- | --- | --------------------------------
+|**[catseye_llama2.h](catseye/catseye_llama2.h)** | math | 1874 | MIT | Llama2 for CPU
 |**[fft.h](fft.h)** | math | 2244 | public domain | Fast Fourier Transform
 |**[ifft.h](fft.h)** | math | 19875 | unknown | Fixed-point in-place Fast Fourier Transform
 |**[fmath.h](fmath.h)** | math | 142 | public domain | Fast math library
