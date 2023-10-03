@@ -40,10 +40,16 @@ typedef DTYPE	real; // _Float16
 //#define calloc(n, size)	({ uint64_t _s = n * size; void* _p = malloc(_s); memset(_p, 0, _s)!=0 ? _p : NULL; })
 #define calloc(n, size)	({ uint64_t _s = n * size; void* _p; posix_memalign((void**) &_p, ALIGN, (_s))==0 ? _p : NULL; })
 
+#undef MIN
+#undef MAX
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
 //---------------------------------------------------------
 // Quantize
 
-#define QK4_0 32
+#define QK4_0	32
+#define QK8	32
 
 // FP16 <-> FP32
 #ifdef __F16C__
@@ -125,6 +131,243 @@ static inline uint16_t cats_compute_fp32_to_fp16(real f)
 }
 #endif
 
+#ifdef __AVX__
+static void quantize_q8(int8_t* q, real* x, int n)
+{
+	int nb = n / QK8;
+	for (int i=0; i<nb; i++) {
+		// Load elements into 4 AVX vectors
+		__m256 v0 = _mm256_load_ps(x);
+		__m256 v1 = _mm256_load_ps(x+8);
+		__m256 v2 = _mm256_load_ps(x+16);
+		__m256 v3 = _mm256_load_ps(x+24);
+		x += 32;
+
+		// Compute max(abs(e)) for the block
+		const __m256 signBit = _mm256_set1_ps(-0.0);
+		__m256 maxAbs = _mm256_andnot_ps(signBit, v0);
+		maxAbs = _mm256_max_ps(maxAbs, _mm256_andnot_ps(signBit, v1));
+		maxAbs = _mm256_max_ps(maxAbs, _mm256_andnot_ps(signBit, v2));
+		maxAbs = _mm256_max_ps(maxAbs, _mm256_andnot_ps(signBit, v3));
+
+		__m128 max4 = _mm_max_ps(_mm256_extractf128_ps(maxAbs, 1), _mm256_castps256_ps128(maxAbs));
+		max4 = _mm_max_ps(max4, _mm_movehl_ps(max4, max4));
+		max4 = _mm_max_ss(max4, _mm_movehdup_ps(max4));
+		const float maxScalar = _mm_cvtss_f32(max4);
+
+		// Quantize these floats
+		const float d = maxScalar / 127.;
+//		y[i].d = GGML_FP32_TO_FP16(d);
+		const float id = ( maxScalar != 0.0 ) ? 127. / maxScalar : 0.0;
+		const __m256 mul = _mm256_set1_ps(id);
+
+		// Apply the multiplier
+		v0 = _mm256_mul_ps(v0, mul);
+		v1 = _mm256_mul_ps(v1, mul);
+		v2 = _mm256_mul_ps(v2, mul);
+		v3 = _mm256_mul_ps(v3, mul);
+
+		// Round to nearest integer
+		v0 = _mm256_round_ps(v0, _MM_ROUND_NEAREST);
+		v1 = _mm256_round_ps(v1, _MM_ROUND_NEAREST);
+		v2 = _mm256_round_ps(v2, _MM_ROUND_NEAREST);
+		v3 = _mm256_round_ps(v3, _MM_ROUND_NEAREST);
+
+		// Convert floats to integers
+		__m256i i0 = _mm256_cvtps_epi32(v0);
+		__m256i i1 = _mm256_cvtps_epi32(v1);
+		__m256i i2 = _mm256_cvtps_epi32(v2);
+		__m256i i3 = _mm256_cvtps_epi32(v3);
+
+		__m128i ni0 = _mm256_castsi256_si128(i0);
+		__m128i ni1 = _mm256_extractf128_si256(i0, 1);
+		__m128i ni2 = _mm256_castsi256_si128(i1);
+		__m128i ni3 = _mm256_extractf128_si256(i1, 1);
+		__m128i ni4 = _mm256_castsi256_si128(i2);
+		__m128i ni5 = _mm256_extractf128_si256(i2, 1);
+		__m128i ni6 = _mm256_castsi256_si128(i3);
+		__m128i ni7 = _mm256_extractf128_si256(i3, 1);
+
+		// Convert int32 to int16
+		ni0 = _mm_packs_epi32(ni0, ni1);
+		ni2 = _mm_packs_epi32(ni2, ni3);
+		ni4 = _mm_packs_epi32(ni4, ni5);
+		ni6 = _mm_packs_epi32(ni6, ni7);
+		// Convert int16 to int8
+		ni0 = _mm_packs_epi16(ni0, ni2);
+		ni4 = _mm_packs_epi16(ni4, ni6);
+
+		int8_t *p = q + i*(32+sizeof(float));
+		_mm_storeu_si128((__m128i *)(p +  0), ni0);
+		_mm_storeu_si128((__m128i *)(p + 16), ni4);
+		*(float*)(p + 32) = d;
+	}
+}
+#else
+static void quantize_q8(int8_t* q, real* x, int n)
+{
+	int num_groups = n / QK8;
+
+	for (int group=0; group<num_groups; group++) {
+		// find the max absolute value in the current group
+		real amax = 0.0;
+		for (int i=0; i<QK8; i++) {
+			real v = fabsf(x[group * QK8 + i]);
+			amax = MAX(amax, v);
+		}
+
+		// calculate and write the scaling factor
+		int8_t* p = q + group * (32+sizeof(float));
+		const float d = amax / 127.0;
+		const float id = d ? 1.0/d : 0.0;
+
+		// calculate and write the quantized values
+		for (int i=0; i<QK8; i++) {
+			float quant_value = x[group * QK8 + i] * id;
+			*p++ = roundf(quant_value); // round and clamp
+		}
+		*((float*)p) = d;
+		p += sizeof(float);
+	}
+}
+#endif
+static void no_quantize(int8_t* q, real* x, int n) {}
+
+static inline int nearest_int(float fval)
+{
+//	assert(fval <= 4194303.f);
+	float val = fval + 12582912.f;
+	int i; memcpy(&i, &val, sizeof(int));
+	return (i & 0x007fffff) - 0x00400000;
+}
+static inline void quantize_q8_K(int8_t* y, real* x, int k)
+{
+	const int nb = k / 256;
+	for (int i=0; i<nb; i++) {
+		float max = 0;
+		float amax = 0;
+		for (int j=0; j<256; ++j) {
+			float ax = fabsf(x[j]);
+			if (ax > amax) {
+				amax = ax; max = x[j];
+			}
+		}
+		if (!amax) {
+			memset(y, 0, 256+4);
+			x += 256;
+			y += 256+4;
+			continue;
+		}
+		const float iscale = -128./max;
+		for (int j=0; j<256; ++j) {
+			int v = nearest_int(iscale*x[j]);
+			*y++ = MIN(127, v);
+		}
+		/*for (int j=0; j<256/16; ++j) {
+			int sum = 0;
+			for (int ii = 0; ii < 16; ++ii) {
+				sum += y[i].qs[j*16 + ii];
+			}
+			y[i].bsums[j] = sum;
+		}*/
+		*(float*)y = 1/iscale;
+		y += sizeof(float);
+		x += 256;
+	}
+}
+static inline void* dequantize_q6_K(void * restrict _y, const void * restrict x, size_t k)
+{
+	const int nb = k / 256;
+	float * restrict y = (float*)_y;
+	for (int i=0; i<nb; i++) {
+		uint8_t *p = (uint8_t*)(x + i*(256/2 +256/4 +256/16 +2));
+		const float d = cats_compute_fp16_to_fp32(*((uint16_t*)(p +256/2 +256/4 +256/16)));
+
+		const uint8_t * restrict ql = p;
+		const uint8_t * restrict qh = p +256/2;
+		const int8_t  * restrict sc = p +256/2 +256/4;
+
+		for (int n=0; n<2; n++) {
+			for (int l=0; l<32; ++l) {
+				int is = l/16;
+				const int8_t q1 = (int8_t)((ql[l +  0] & 0xF) | (((qh[l] >> 0) & 3) << 4)) - 32;
+				const int8_t q2 = (int8_t)((ql[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)) - 32;
+				const int8_t q3 = (int8_t)((ql[l +  0]  >> 4) | (((qh[l] >> 4) & 3) << 4)) - 32;
+				const int8_t q4 = (int8_t)((ql[l + 32]  >> 4) | (((qh[l] >> 6) & 3) << 4)) - 32;
+				y[l +  0] = d * sc[is + 0] * q1;
+				y[l + 32] = d * sc[is + 2] * q2;
+				y[l + 64] = d * sc[is + 4] * q3;
+				y[l + 96] = d * sc[is + 6] * q4;
+			}
+			y  += 128;
+			ql += 64;
+			qh += 32;
+			sc += 8;
+		}
+	}
+	return 0;
+}
+static inline void* dequantize_q4_0(void * restrict y, const void * restrict x, size_t k)
+{
+	const int nb = k / 32;
+	for (int i=0; i<nb; i++) {
+		uint8_t *p = (uint8_t*)(x + i*18);
+		const float delta = cats_compute_fp16_to_fp32(*((uint16_t*)p));
+		p += 2;
+
+		float *y0 = (float*)(y + i*32*sizeof(float));
+		float *y1 = y0 + 16;
+		*y0++ = ((*p   & 0x0F) - 8)*delta;
+		*y1++ = ((*p++ >>   4) - 8)*delta;
+		*y0++ = ((*p   & 0x0F) - 8)*delta;
+		*y1++ = ((*p++ >>   4) - 8)*delta;
+		*y0++ = ((*p   & 0x0F) - 8)*delta;
+		*y1++ = ((*p++ >>   4) - 8)*delta;
+		*y0++ = ((*p   & 0x0F) - 8)*delta;
+		*y1++ = ((*p++ >>   4) - 8)*delta;
+
+		*y0++ = ((*p   & 0x0F) - 8)*delta;
+		*y1++ = ((*p++ >>   4) - 8)*delta;
+		*y0++ = ((*p   & 0x0F) - 8)*delta;
+		*y1++ = ((*p++ >>   4) - 8)*delta;
+		*y0++ = ((*p   & 0x0F) - 8)*delta;
+		*y1++ = ((*p++ >>   4) - 8)*delta;
+		*y0++ = ((*p   & 0x0F) - 8)*delta;
+		*y1++ = ((*p++ >>   4) - 8)*delta;
+
+		*y0++ = ((*p   & 0x0F) - 8)*delta;
+		*y1++ = ((*p++ >>   4) - 8)*delta;
+		*y0++ = ((*p   & 0x0F) - 8)*delta;
+		*y1++ = ((*p++ >>   4) - 8)*delta;
+		*y0++ = ((*p   & 0x0F) - 8)*delta;
+		*y1++ = ((*p++ >>   4) - 8)*delta;
+		*y0++ = ((*p   & 0x0F) - 8)*delta;
+		*y1++ = ((*p++ >>   4) - 8)*delta;
+
+		*y0++ = ((*p   & 0x0F) - 8)*delta;
+		*y1++ = ((*p++ >>   4) - 8)*delta;
+		*y0++ = ((*p   & 0x0F) - 8)*delta;
+		*y1++ = ((*p++ >>   4) - 8)*delta;
+		*y0++ = ((*p   & 0x0F) - 8)*delta;
+		*y1++ = ((*p++ >>   4) - 8)*delta;
+		*y0++ = ((*p   & 0x0F) - 8)*delta;
+		*y1++ = ((*p++ >>   4) - 8)*delta;
+	}
+	return 0;
+}
+static void* _dequantize_q6_K(void * restrict a, const void * restrict b, int n, int k)
+{
+	dequantize_q6_K(a, b +n*k/256*(256/2 +256/4 +256/16 +2), k);
+}
+static void* _dequantize_q4_0(void * restrict a, const void * restrict b, int n, int k)
+{
+	dequantize_q4_0(a, b +n*(k/32*18), k);
+}
+static void* _dequantize_memcpy(void * restrict a, const void * restrict b, int n, int k)
+{
+	memcpy(a, b +n*k*sizeof(real), k*sizeof(real));
+}
+
 //---------------------------------------------------------
 // utilities
 
@@ -154,14 +397,21 @@ static float random_f32()
 //---------------------------------------------------------
 // define struct
 
+static void* (*dequantize)(void * restrict, const void * restrict, int, int) = _dequantize_memcpy;
+static void (*quantize)(int8_t*, real*, int) = no_quantize;
+static void (*matmul)(real* restrict, void* restrict, void* restrict, int, int);
+
 #define CATS_NAME_MAX		48
+#define CATS_MAX_DIM		4
 typedef struct {
 	char name[CATS_NAME_MAX];
 	int type;
-	int dim[2];
+	uint32_t n_dim;
+	uint64_t dim[CATS_MAX_DIM];
 	void *data;
 
-	void (*matmul)(void*, void*, void*, int, int);
+	void (*quantize)(int8_t*, real*, int);
+	void (*matmul)(real* restrict, void* restrict, void* restrict, int, int);
 
 	uint64_t size;		// size of the file
 	size_t offset;		// offset of the file
@@ -169,7 +419,7 @@ typedef struct {
 
 #define CATS_LLAMA_LAYER	32
 typedef struct {
-	// header: FIX!!
+	// GGML header
 	uint32_t n_vocab;	// vocab size: 32000
 	uint32_t n_embd;	// dimention: 4096
 	uint32_t n_mult;	// 256
@@ -191,18 +441,18 @@ typedef struct {
 	// weights
 	cats_tensor tensor[3+9*CATS_LLAMA_LAYER];
 
-	cats_tensor *token_embedding_table;
-	cats_tensor *rms_att_weight[CATS_LLAMA_LAYER];
-	cats_tensor *rms_ffn_weight[CATS_LLAMA_LAYER];
-	cats_tensor *wq[CATS_LLAMA_LAYER];
-	cats_tensor *wk[CATS_LLAMA_LAYER];
-	cats_tensor *wv[CATS_LLAMA_LAYER];
-	cats_tensor *wo[CATS_LLAMA_LAYER];
-	cats_tensor *w1[CATS_LLAMA_LAYER];
-	cats_tensor *w2[CATS_LLAMA_LAYER];
-	cats_tensor *w3[CATS_LLAMA_LAYER];
-	cats_tensor *rms_final_weight;
-	cats_tensor *wcls;
+	cats_tensor *token_embedding_table;		// (vocab_size, dim)
+	cats_tensor *rms_att_weight[CATS_LLAMA_LAYER];	// (layer, dim) rmsnorm weights
+	cats_tensor *rms_ffn_weight[CATS_LLAMA_LAYER];	// (layer, dim)
+	cats_tensor *wq[CATS_LLAMA_LAYER];		// (layer, dim, n_heads * head_size)
+	cats_tensor *wk[CATS_LLAMA_LAYER];		// (layer, dim, n_kv_heads * head_size)
+	cats_tensor *wv[CATS_LLAMA_LAYER];		// (layer, dim, n_kv_heads * head_size)
+	cats_tensor *wo[CATS_LLAMA_LAYER];		// (layer, n_heads * head_size, dim)
+	cats_tensor *w1[CATS_LLAMA_LAYER];		// (layer, hidden_dim, dim)
+	cats_tensor *w2[CATS_LLAMA_LAYER];		// (layer, dim, hidden_dim)
+	cats_tensor *w3[CATS_LLAMA_LAYER];		// (layer, hidden_dim, dim)
+	cats_tensor *rms_final_weight;			// (dim,)
+	cats_tensor *wcls;				// (optional) classifier weights for the logits, on the last layer
 
 	// state
 	real *x;		// activation at current time stamp (dim,)
@@ -211,8 +461,8 @@ typedef struct {
 	real *hb;		// buffer for hidden dimension in the ffn (hidden_dim,)
 	real *hb2;		// buffer for hidden dimension in the ffn (hidden_dim,)
 	real *q;		// query (dim,)
-	real *k;		// key (dim,)
-	real *v;		// value (dim,)
+//	real *k;		// key (dim,)
+//	real *v;		// value (dim,)
 	real *att;		// buffer for scores/attention values (n_heads, seq_len)
 	real *logits;		// output logits
 	real *key_cache;	// (layer, seq_len, dim)
@@ -231,15 +481,15 @@ static void malloc_run_state(cats_ggml_model* m)
 	m->hb = calloc(m->n_hidden, sizeof(real));
 	m->hb2 = calloc(m->n_hidden, sizeof(real));
 	m->q = calloc(m->n_embd, sizeof(real));
-	m->k = calloc(kv_dim, sizeof(real));
-	m->v = calloc(kv_dim, sizeof(real));
+//	m->k = calloc(kv_dim, sizeof(real));
+//	m->v = calloc(kv_dim, sizeof(real));
 	m->att = calloc(m->n_head * m->seq_len, sizeof(real));
 	m->logits = calloc(m->n_vocab, sizeof(real));
 	m->key_cache = calloc(m->n_layer * m->seq_len * kv_dim, sizeof(real));
 	m->value_cache = calloc(m->n_layer * m->seq_len * kv_dim, sizeof(real));
 	// ensure all mallocs went fine
 	if (!m->x || !m->xb || !m->xb2 || !m->hb || !m->hb2 || !m->q
-		|| !m->k || !m->v || !m->att || !m->logits || !m->key_cache
+		|| /*!m->k || !m->v ||*/ !m->att || !m->logits || !m->key_cache
 		|| !m->value_cache/* || !s->probindex*/) {
 		fprintf(stderr, "malloc_run_state: malloc failed!\n");
 		exit(1);
@@ -254,8 +504,8 @@ static void free_run_state(cats_ggml_model* m)
 	free(m->hb);
 	free(m->hb2);
 	free(m->q);
-	free(m->k);
-	free(m->v);
+//	free(m->k);
+//	free(m->v);
 	free(m->att);
 	free(m->logits);
 	free(m->key_cache);
@@ -266,7 +516,7 @@ static void free_run_state(cats_ggml_model* m)
 // neural net blocks
 
 // Root Mean Square Normalization
-static void rmsnorm(real* o, real* x, real* weight, int size)
+static inline void rmsnorm(real* o, real* x, real* weight, int size)
 {
 	// calculate sum of squares
 	real ss = 0.0;
@@ -282,7 +532,7 @@ static void rmsnorm(real* o, real* x, real* weight, int size)
 	}
 }
 
-static void softmax(real* x, int size)
+static inline void softmax(real* x, int size)
 {
 	// find max value (for numerical stability)
 	real max_val = x[0];
@@ -306,7 +556,6 @@ static void softmax(real* x, int size)
 }
 
 #ifdef __AVX__
-#if 1
 //#include "catseye_llama2_matmul.h"
 static inline void sgemm7_(const int M, const int N, const int K, const float *A, const float *B, float *C)
 {
@@ -372,16 +621,194 @@ static inline void sgemm7_(const int M, const int N, const int K, const float *A
 }
 // gcc -I/usr/include/openblas/ -lopenblas -o llama2 -Ofast -fopenmp -march=native -mfpmath=both -mavx -ffast-math -funroll-loops llama2.c -lm
 //#include <cblas.h>
-/*static inline void matmul(real* o, const real* x, const real* w, int n, int d)
+/*static void matmul(real* o, const real* x, const real* w, int n, int d)
 {
 	sgemm7_(d, 1, n, w, x, o); // 500
 //	sgemm_block_parallel(d, 1, n, w, x, o);
 //	cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, d, 1, n, 1.0, w, n, x, 1, 0.0, o, 1); // slow
 //	cblas_sgemv(CblasRowMajor, CblasNoTrans, d, n, 1.0, w, n, x, 1, 0.0, o, 1);
 }*/
+// multiply int8_t, add results pairwise twice
+static inline __m128i mul_sum_i8_pairs(const __m128i x, const __m128i y)
+{
+	// Get absolute values of x vectors
+	const __m128i ax = _mm_sign_epi8(x, x);
+	// Sign the values of the y vectors
+	const __m128i sy = _mm_sign_epi8(y, x);
+	// Perform multiplication and create 16-bit values
+	const __m128i dot = _mm_maddubs_epi16(ax, sy);
+	const __m128i ones = _mm_set1_epi16(1);
+	return _mm_madd_epi16(ones, dot);
+}
+//#define MM256_SET_M128I(a, b) _mm256_insertf128_si256(_mm256_castsi128_si256(b), (a), 1)
+#define MM256_SET_M128I(a, b) _mm256_set_m128i((a), (b))
+static inline float dot_q4_0_q8_avx(uint8_t *a, int8_t *b, int n)
+{
+	const __m128i lowMask = _mm_set1_epi8(0xF);
+	const __m128i off = _mm_set1_epi8(8);
+	int nb = n>>5; // 32
+	__m256 acc = _mm256_setzero_ps();
+	for (int i=0; i<nb; ++i) {
+		// Compute combined scale for the block
+		uint8_t *x = a +i*18;
+		float delta = cats_compute_fp16_to_fp32(*(uint16_t*)x);
+		x += 2;
+//		const __m256 d = _mm256_set1_ps( GGML_FP16_TO_FP32(x[i].d) * GGML_FP16_TO_FP32(y[i].d) );
+
+		int8_t *y = b +i*(32+4);
+		const __m128i tmp = _mm_loadu_si128((const __m128i *)x); // 4bit * 16 = 32byte
+
+		__m128i bx = _mm_and_si128(lowMask, tmp); // 4bit -> 8 bit
+		__m128i by = _mm_loadu_si128((const __m128i *)y); // 8bit * 16 = 128byte
+		bx = _mm_sub_epi8(bx, off);
+		const __m128i i32_0 = mul_sum_i8_pairs(bx, by);
+
+		bx = _mm_and_si128(lowMask, _mm_srli_epi64(tmp, 4));
+		by = _mm_loadu_si128((const __m128i *)(y +16));
+		bx = _mm_sub_epi8(bx, off);
+		const __m128i i32_1 = mul_sum_i8_pairs(bx, by);
+
+		// Convert int32_t to float
+		__m256 p = _mm256_cvtepi32_ps(MM256_SET_M128I(i32_0, i32_1));
+
+		// Apply the scale, and accumulate
+		delta *= *((float*)(y +32));
+		const __m256 d = _mm256_set1_ps(delta);
+		acc = _mm256_add_ps(_mm256_mul_ps(d, p), acc);
+	}
+	acc = _mm256_hadd_ps(acc, acc);
+	acc = _mm256_hadd_ps(acc, acc);
+	return _mm_cvtss_f32(_mm_add_ps(_mm256_extractf128_ps(acc, 1), _mm256_castps256_ps128(acc)));
+//	return hsum_float_8(acc);
+}
+static inline real dot_q4_0_q8(uint8_t *a, int8_t *b, int n)
+{
+	int nn = n>>5; // 32
+	real val = 0.0;
+	for (int i=0; i<nn; i++) {
+		uint8_t *p = a +i*18;
+		real delta = cats_compute_fp16_to_fp32(*((uint16_t*)p));
+		p += sizeof(uint16_t);
+
+		int8_t *b0 = b +i*(32+sizeof(float));
+//		delta *= *((float*)b0);
+//		b0 += 4;//sizeof(float);
+		int8_t *b1 = b0+16;
+
+		int32_t ival;
+		ival  = ((int32_t)((*p   & 0x0F) - 8) * *b0++); // 0
+		ival += ((int32_t)((*p++ >>   4) - 8) * *b1++);
+		ival += ((int32_t)((*p   & 0x0F) - 8) * *b0++);
+		ival += ((int32_t)((*p++ >>   4) - 8) * *b1++);
+		ival += ((int32_t)((*p   & 0x0F) - 8) * *b0++);
+		ival += ((int32_t)((*p++ >>   4) - 8) * *b1++);
+		ival += ((int32_t)((*p   & 0x0F) - 8) * *b0++);
+		ival += ((int32_t)((*p++ >>   4) - 8) * *b1++);
+
+		ival += ((int32_t)((*p   & 0x0F) - 8) * *b0++);
+		ival += ((int32_t)((*p++ >>   4) - 8) * *b1++);
+		ival += ((int32_t)((*p   & 0x0F) - 8) * *b0++);
+		ival += ((int32_t)((*p++ >>   4) - 8) * *b1++);
+		ival += ((int32_t)((*p   & 0x0F) - 8) * *b0++);
+		ival += ((int32_t)((*p++ >>   4) - 8) * *b1++);
+		ival += ((int32_t)((*p   & 0x0F) - 8) * *b0++);
+		ival += ((int32_t)((*p++ >>   4) - 8) * *b1++);
+
+		ival += ((int32_t)((*p   & 0x0F) - 8) * *b0++);
+		ival += ((int32_t)((*p++ >>   4) - 8) * *b1++);
+		ival += ((int32_t)((*p   & 0x0F) - 8) * *b0++);
+		ival += ((int32_t)((*p++ >>   4) - 8) * *b1++);
+		ival += ((int32_t)((*p   & 0x0F) - 8) * *b0++);
+		ival += ((int32_t)((*p++ >>   4) - 8) * *b1++);
+		ival += ((int32_t)((*p   & 0x0F) - 8) * *b0++);
+		ival += ((int32_t)((*p++ >>   4) - 8) * *b1++);
+
+		ival += ((int32_t)((*p   & 0x0F) - 8) * *b0++);
+		ival += ((int32_t)((*p++ >>   4) - 8) * *b1++);
+		ival += ((int32_t)((*p   & 0x0F) - 8) * *b0++);
+		ival += ((int32_t)((*p++ >>   4) - 8) * *b1++);
+		ival += ((int32_t)((*p   & 0x0F) - 8) * *b0++);
+		ival += ((int32_t)((*p++ >>   4) - 8) * *b1++);
+		ival += ((int32_t)((*p   & 0x0F) - 8) * *b0++);
+		ival += ((int32_t)((*p++ >>   4) - 8) * *b1++);
+
+		delta *= *((float*)b1);
+//		b1 += 4;//sizeof(float);
+		val += ival * delta;
+	}
+	return val;
+}
+// horizontally add 8 floats
+/*static inline float hsum_float_8(const __m256 x)
+{
+	__m128 res = _mm256_extractf128_ps(x, 1);
+	res = _mm_add_ps(res, _mm256_castps256_ps128(x)); // ( x3+x7, x2+x6, x1+x5, x0+x4 )
+	res = _mm_add_ps(res, _mm_movehl_ps(res, res)); // ( -, -, x1+x3+x5+x7, x0+x2+x4+x6 )
+	res = _mm_add_ss(res, _mm_movehdup_ps(res)); // ( -, -, -, x0+x1+x2+x3+x4+x5+x6+x7 )
+	return _mm_cvtss_f32(res);
+}*/
+static inline float hsum_float_8(__m256 acc)
+{
+/*	acc = _mm256_hadd_ps(acc, acc);
+	acc = _mm256_hadd_ps(acc, acc);
+	static __attribute__((aligned(32))) float vals[8];
+	_mm256_store_ps(vals, acc);
+	return vals[0] + vals[4];*/
+	acc = _mm256_hadd_ps(acc, acc);
+	acc = _mm256_hadd_ps(acc, acc);
+	return _mm_cvtss_f32(_mm_add_ps(_mm256_extractf128_ps(acc, 1), _mm256_castps256_ps128(acc)));
+}
+static inline __m256i __mm256_cvtepi8_epi32(__m128i v)
+{
+	// expand signed 16bit
+	__m128i lo = _mm_srai_epi16(v, 8);
+
+	// expand 32bit
+	__m128i lo32_0 = _mm_cvtepi16_epi32(lo);
+	__m128i lo32_1 = _mm_cvtepi16_epi32(_mm_shuffle_epi32(lo, 0xee));
+
+	// convert to __m256i
+	__m256i lo256 = _mm256_insertf128_si256(_mm256_castsi128_si256(lo32_0), lo32_1, 1);
+	return lo256;
+}
+static inline float dot_avx_q4_0(uint8_t* __restrict a, real* __restrict b, int n)
+{
+	int nn = n>>5; // 32
+	__m256 *b_ptr = (__m256*)b;
+        const __m128i lowMask = _mm_set1_epi8(0xF);
+        const __m128i off = _mm_set1_epi8(8);
+	__m256 acc = _mm256_setzero_ps();
+
+	_mm_prefetch(b_ptr, _MM_HINT_T0);
+	for (int i=0; i<nn; i++) {
+		uint8_t *p = a +i*18;
+		_mm_prefetch(p, _MM_HINT_T0);
+		const __m256 d = _mm256_set1_ps(cats_compute_fp16_to_fp32(*((uint16_t*)p)));
+		p += 2;
+
+		const __m128i w = _mm_loadu_si128((const __m128i *)p); // 16 byte
+//		_mm_prefetch(b_ptr, _MM_HINT_T0);
+		__m128i iw0 = _mm_and_si128(lowMask, w); // ((*p   & 0x0F) - 8)
+		iw0 = _mm_sub_epi8(iw0, off);
+		__m128i iw1 = _mm_and_si128(lowMask, _mm_srli_epi64(w, 4)); // ((*p++ >>   4) - 8)
+		iw1 = _mm_sub_epi8(iw1, off);
+
+		__m256 w0 = _mm256_mul_ps(_mm256_cvtepi32_ps(__mm256_cvtepi8_epi32(_mm_unpacklo_epi8(iw0, iw0))), d);
+		__m256 w1 = _mm256_mul_ps(_mm256_cvtepi32_ps(__mm256_cvtepi8_epi32(_mm_unpackhi_epi8(iw0, iw0))), d);
+
+		__m256 w2 = _mm256_mul_ps(_mm256_cvtepi32_ps(__mm256_cvtepi8_epi32(_mm_unpacklo_epi8(iw1, iw1))), d);
+		__m256 w3 = _mm256_mul_ps(_mm256_cvtepi32_ps(__mm256_cvtepi8_epi32(_mm_unpackhi_epi8(iw1, iw1))), d);
+
+		acc = _mm256_add_ps(acc, _mm256_mul_ps(w0, *b_ptr++));
+		acc = _mm256_add_ps(acc, _mm256_mul_ps(w1, *b_ptr++));
+		acc = _mm256_add_ps(acc, _mm256_mul_ps(w2, *b_ptr++));
+		acc = _mm256_add_ps(acc, _mm256_mul_ps(w3, *b_ptr++));
+	}
+	return hsum_float_8(acc);
+}
 static inline real dot_q4_0(uint8_t *a, real *b, int n)
 {
-	int nn = n>>5;
+	int nn = n>>5; // 32
 	static __attribute__((aligned(32))) real w[32];
 	real val = 0.0;
 	for (int i=0; i<nn; i++) {
@@ -462,69 +889,6 @@ static inline real dot_q4_0(uint8_t *a, real *b, int n)
 	}
 	return val;
 }
-// horizontally add 8 floats
-static inline float hsum_float_8(const __m256 x)
-{
-	__m128 res = _mm256_extractf128_ps(x, 1);
-	res = _mm_add_ps(res, _mm256_castps256_ps128(x)); // ( x3+x7, x2+x6, x1+x5, x0+x4 )
-	res = _mm_add_ps(res, _mm_movehl_ps(res, res)); // ( -, -, x1+x3+x5+x7, x0+x2+x4+x6 )
-	res = _mm_add_ss(res, _mm_movehdup_ps(res)); // ( -, -, -, x0+x1+x2+x3+x4+x5+x6+x7 )
-	return _mm_cvtss_f32(res);
-}
-static inline __m256i __mm256_cvtepi8_epi32(__m128i v)
-{
-	// expand signed 16bit
-	__m128i lo = _mm_srai_epi16(v, 8);
-
-	// expand 32bit
-	__m128i lo32_0 = _mm_cvtepi16_epi32(lo);
-	__m128i lo32_1 = _mm_cvtepi16_epi32(_mm_shuffle_epi32(lo, 0xee));
-
-	// convert to __m256i
-	__m256i lo256 = _mm256_insertf128_si256(_mm256_castsi128_si256(lo32_0), lo32_1, 1);
-	return lo256;
-}
-static inline float dot_avx_q4_0(uint8_t* __restrict a, real* __restrict b, int n)
-{
-	int nn = n>>5; // 32
-	__m256 *b_ptr = (__m256*)b;
-        const __m128i lowMask = _mm_set1_epi8(0xF);
-        const __m128i off = _mm_set1_epi8(8);
-	__m256 acc = _mm256_setzero_ps();
-
-	_mm_prefetch(b_ptr, _MM_HINT_T0);
-	for (int i=0; i<nn; i++) {
-		uint8_t *p = a +i*18;
-		_mm_prefetch(p, _MM_HINT_T0);
-		const __m256 d = _mm256_set1_ps(cats_compute_fp16_to_fp32(*((uint16_t*)p)));
-		p += 2;
-
-		const __m128i w = _mm_loadu_si128((const __m128i *)p); // 16 byte
-//		_mm_prefetch(b_ptr, _MM_HINT_T0);
-		__m128i iw0 = _mm_and_si128(lowMask, w); // ((*p   & 0x0F) - 8)
-		iw0 = _mm_sub_epi8(iw0, off);
-		__m128i iw1 = _mm_and_si128(lowMask, _mm_srli_epi64(w, 4)); // ((*p++ >>   4) - 8)
-		iw1 = _mm_sub_epi8(iw1, off);
-
-		__m256 w0 = _mm256_mul_ps(_mm256_cvtepi32_ps(__mm256_cvtepi8_epi32(_mm_unpacklo_epi8(iw0, iw0))), d);
-		__m256 w1 = _mm256_mul_ps(_mm256_cvtepi32_ps(__mm256_cvtepi8_epi32(_mm_unpackhi_epi8(iw0, iw0))), d);
-
-		__m256 w2 = _mm256_mul_ps(_mm256_cvtepi32_ps(__mm256_cvtepi8_epi32(_mm_unpacklo_epi8(iw1, iw1))), d);
-		__m256 w3 = _mm256_mul_ps(_mm256_cvtepi32_ps(__mm256_cvtepi8_epi32(_mm_unpackhi_epi8(iw1, iw1))), d);
-
-		acc = _mm256_add_ps(acc, _mm256_mul_ps(w0, *b_ptr++));
-		acc = _mm256_add_ps(acc, _mm256_mul_ps(w1, *b_ptr++));
-		acc = _mm256_add_ps(acc, _mm256_mul_ps(w2, *b_ptr++));
-		acc = _mm256_add_ps(acc, _mm256_mul_ps(w3, *b_ptr++));
-	}
-//	return hsum_float_8(acc);
-
-	acc = _mm256_hadd_ps(acc, acc);
-	acc = _mm256_hadd_ps(acc, acc);
-	static __attribute__((aligned(32))) float vals[8];
-	_mm256_store_ps(vals, acc);
-	return vals[0] + vals[4];
-}
 static inline float sdot_avx(const real *a, const real *b, int n)
 {
 	int i;
@@ -538,67 +902,187 @@ static inline float sdot_avx(const real *a, const real *b, int n)
 		acc = _mm256_add_ps(acc, _mm256_mul_ps(x0, y0));
 		acc = _mm256_add_ps(acc, _mm256_mul_ps(x1, y1));
 	}
-/*	acc = _mm256_hadd_ps(acc, acc);
-	acc = _mm256_hadd_ps(acc, acc);
-	float val = _mm_cvtss_f32(_mm_add_ps(_mm256_extractf128_ps(acc, 1), _mm256_castps256_ps128(acc)));*/
 	float val = hsum_float_8(acc);
 	for (; i<n; ++i) val += a[i] * b[i];
 	return val;
 }
-static inline void matmul(real* __restrict xout, real* __restrict x, real* __restrict w, int n, int d)
+static inline real dot_q6_K_q8_K(uint8_t *x, int8_t *y, int n)
 {
-	// W (d,n) @ x (n,) -> xout (d,)
-	omp_set_num_threads(8);
-	#pragma omp parallel for
-	for (int i=0; i<d; i++) {
-//		xout[i] = sdot_avx(w+i*n, x, n); // 580
-//		xout[i] = dot_q4_0(((uint8_t*)w)+i*n/32*18, x, n);
-		xout[i] = dot_avx_q4_0(((uint8_t*)w)+i*n/32*18, x, n);
-	}
-}
-#else // 496
-// matmul is a matrix multiplication function that computes the product of a matrix (w) and
-// a vector (x) and stores the result in the output vector (o).
-// The function takes the dimensions (n, d) of the matrix as input.
-// This function is used for transforming input data in the application
-static inline void matmul(real* o, const real* x, const real* w, int n, int d)
-{
-	// W (d,n) @ x (n,) -> o (d,)
-	int nn = n&~(8-1); // ensure n is a multiple of 8
-	#pragma omp parallel for
-	for (int i=0; i<d; i++) {
-		__m256 sum_vec = _mm256_setzero_ps(); // for AVX2, sum of 8 floats
-		int i_n = i * n;
-		for (int j=0; j<nn; j+=8) {
-			// Load 8 values from w and x
-//			printf("w:%x,%x\n",w,(uint64_t)(w)>>5<<5);
-//			printf("x:%x,%x\n",x,(uint64_t)(x)>>5<<5);
-			__m256 w_vec = _mm256_load_ps(&w[i_n + j]);
-			__m256 x_vec = _mm256_load_ps(&x[j]);
-//			__m256 w_vec = _mm256_loadu_ps(&w[i_n + j]);
-//			__m256 x_vec = _mm256_loadu_ps(&x[j]);
+	const int nb = n / 256;
+	int8_t  aux8[256];
+	int16_t aux16[8];
+	float   sums [8];
+	int32_t aux32[8];
+	memset(sums, 0, 8*sizeof(float));
 
-			// Multiply and accumulate
-			sum_vec = _mm256_add_ps(sum_vec, _mm256_mul_ps(w_vec, x_vec));
+	float sumf = 0;
+	for (int i=0; i<nb; ++i) {
+		uint8_t *p = (uint8_t*)(x + i*(256/2 +256/4 +256/16 +2));
+		const uint8_t * restrict q4 = p;
+		const uint8_t * restrict qh = p +256/2;
+		memset(aux32, 0, 8*sizeof(int32_t));
+		int8_t * restrict a = aux8;
+		for (int j=0; j<256; j+=128) {
+			for (int l=0; l<32; ++l) {
+				a[l +  0] = (int8_t)((q4[l +  0] & 0xF) | (((qh[l] >> 0) & 3) << 4)) - 32;
+				a[l + 32] = (int8_t)((q4[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)) - 32;
+				a[l + 64] = (int8_t)((q4[l +  0] >>  4) | (((qh[l] >> 4) & 3) << 4)) - 32;
+				a[l + 96] = (int8_t)((q4[l + 32] >>  4) | (((qh[l] >> 6) & 3) << 4)) - 32;
+			}
+			a  += 128;
+			q4 += 64;
+			qh += 32;
+		}
+		a = aux8;
+		const int8_t * restrict sc = p +256/2 +256/4;
+		const int8_t * restrict q8 = y +i*(4+256);
+		for (int j=0; j<256/16; ++j) {
+			for (int l=0; l<8; ++l) aux16[l] = q8[l] * a[l];
+			for (int l=0; l<8; ++l) aux32[l] += (*sc) * aux16[l];
+			q8 += 8; a += 8;
+			for (int l=0; l<8; ++l) aux16[l] = q8[l] * a[l];
+			for (int l=0; l<8; ++l) aux32[l] += (*sc) * aux16[l];
+			q8 += 8; a += 8;
+			sc++;
+		}
+		const float d = cats_compute_fp16_to_fp32(*((uint16_t*)(p +256/2 +256/4 +256/16))) * (*(float*)q8);
+		for (int l=0; l<8; ++l) sums[l] += d * aux32[l];
+	}
+	for (int l=0; l<8; ++l) sumf += sums[l];
+	return sumf;
+}
+static inline real dot_q6_K_q8_K_avx(uint8_t *x, int8_t *y, int n)
+{
+	const int nb = n / 256;
+	const __m128i m4 = _mm_set1_epi8(0xF);
+	const __m128i m3 = _mm_set1_epi8(3);
+	const __m128i m32s = _mm_set1_epi8(32);
+	const __m128i m2 = _mm_set1_epi8(2);
+
+	__m256 acc = _mm256_setzero_ps();
+	for (int i=0; i<nb; ++i) {
+		uint8_t *p = (uint8_t*)(x + i*(256/2 +256/4 +256/16 +2));
+		const uint8_t * restrict q4 = p;
+		const uint8_t * restrict qh = p +256/2;
+		const int8_t * restrict sc = p +256/2 +256/4;
+		const int8_t * restrict q8 = y +i*(4+256);
+//		const float d = cats_compute_fp16_to_fp32(*((uint16_t*)(p +256/2 +256/4 +256/16))) * (*(float*)(q8+256));
+
+		const __m128i scales = _mm_loadu_si128((const __m128i*)sc);
+
+		__m128i sumi_0 = _mm_setzero_si128();
+		__m128i sumi_1 = _mm_setzero_si128();
+
+		__m128i shuffle = _mm_set_epi64x(0x0101010101010101, 0x0000000000000000);
+		for (int j=0; j<256/128; j++) {
+			const __m128i q4bitsH_0 = _mm_loadu_si128((const __m128i*)qh); qh += 16;
+			const __m128i q4bitsH_1 = _mm_loadu_si128((const __m128i*)qh); qh += 16;
+
+			const __m128i q4h_0 = _mm_slli_epi16(_mm_and_si128(q4bitsH_0, m3), 4);
+			const __m128i q4h_1 = _mm_slli_epi16(_mm_and_si128(q4bitsH_1, m3), 4);
+			const __m128i q4h_2 = _mm_slli_epi16(_mm_and_si128(_mm_srli_epi16(q4bitsH_0, 2), m3), 4);
+			const __m128i q4h_3 = _mm_slli_epi16(_mm_and_si128(_mm_srli_epi16(q4bitsH_1, 2), m3), 4);
+			const __m128i q4h_4 = _mm_slli_epi16(_mm_and_si128(_mm_srli_epi16(q4bitsH_0, 4), m3), 4);
+			const __m128i q4h_5 = _mm_slli_epi16(_mm_and_si128(_mm_srli_epi16(q4bitsH_1, 4), m3), 4);
+			const __m128i q4h_6 = _mm_slli_epi16(_mm_and_si128(_mm_srli_epi16(q4bitsH_0, 6), m3), 4);
+			const __m128i q4h_7 = _mm_slli_epi16(_mm_and_si128(_mm_srli_epi16(q4bitsH_1, 6), m3), 4);
+
+			const __m128i q4bits1_0 = _mm_loadu_si128((const __m128i*)q4); q4 += 16;
+			const __m128i q4bits1_1 = _mm_loadu_si128((const __m128i*)q4); q4 += 16;
+			const __m128i q4bits2_0 = _mm_loadu_si128((const __m128i*)q4); q4 += 16;
+			const __m128i q4bits2_1 = _mm_loadu_si128((const __m128i*)q4); q4 += 16;
+
+			const __m128i q4_0 = _mm_or_si128(_mm_and_si128(q4bits1_0, m4), q4h_0);
+			const __m128i q4_1 = _mm_or_si128(_mm_and_si128(q4bits1_1, m4), q4h_1);
+			const __m128i q4_2 = _mm_or_si128(_mm_and_si128(q4bits2_0, m4), q4h_2);
+			const __m128i q4_3 = _mm_or_si128(_mm_and_si128(q4bits2_1, m4), q4h_3);
+			const __m128i q4_4 = _mm_or_si128(_mm_and_si128(_mm_srli_epi16(q4bits1_0, 4), m4), q4h_4);
+			const __m128i q4_5 = _mm_or_si128(_mm_and_si128(_mm_srli_epi16(q4bits1_1, 4), m4), q4h_5);
+			const __m128i q4_6 = _mm_or_si128(_mm_and_si128(_mm_srli_epi16(q4bits2_0, 4), m4), q4h_6);
+			const __m128i q4_7 = _mm_or_si128(_mm_and_si128(_mm_srli_epi16(q4bits2_1, 4), m4), q4h_7);
+
+			const __m128i q8_0 = _mm_loadu_si128((const __m128i*)q8); q8 += 16;
+			const __m128i q8_1 = _mm_loadu_si128((const __m128i*)q8); q8 += 16;
+			const __m128i q8_2 = _mm_loadu_si128((const __m128i*)q8); q8 += 16;
+			const __m128i q8_3 = _mm_loadu_si128((const __m128i*)q8); q8 += 16;
+			const __m128i q8_4 = _mm_loadu_si128((const __m128i*)q8); q8 += 16;
+			const __m128i q8_5 = _mm_loadu_si128((const __m128i*)q8); q8 += 16;
+			const __m128i q8_6 = _mm_loadu_si128((const __m128i*)q8); q8 += 16;
+			const __m128i q8_7 = _mm_loadu_si128((const __m128i*)q8); q8 += 16;
+
+			__m128i q8s_0 = _mm_maddubs_epi16(m32s, q8_0);
+			__m128i q8s_1 = _mm_maddubs_epi16(m32s, q8_1);
+			__m128i q8s_2 = _mm_maddubs_epi16(m32s, q8_2);
+			__m128i q8s_3 = _mm_maddubs_epi16(m32s, q8_3);
+			__m128i q8s_4 = _mm_maddubs_epi16(m32s, q8_4);
+			__m128i q8s_5 = _mm_maddubs_epi16(m32s, q8_5);
+			__m128i q8s_6 = _mm_maddubs_epi16(m32s, q8_6);
+			__m128i q8s_7 = _mm_maddubs_epi16(m32s, q8_7);
+
+			__m128i p16_0 = _mm_maddubs_epi16(q4_0, q8_0);
+			__m128i p16_1 = _mm_maddubs_epi16(q4_1, q8_1);
+			__m128i p16_2 = _mm_maddubs_epi16(q4_2, q8_2);
+			__m128i p16_3 = _mm_maddubs_epi16(q4_3, q8_3);
+			__m128i p16_4 = _mm_maddubs_epi16(q4_4, q8_4);
+			__m128i p16_5 = _mm_maddubs_epi16(q4_5, q8_5);
+			__m128i p16_6 = _mm_maddubs_epi16(q4_6, q8_6);
+			__m128i p16_7 = _mm_maddubs_epi16(q4_7, q8_7);
+
+			p16_0 = _mm_sub_epi16(p16_0, q8s_0);
+			p16_1 = _mm_sub_epi16(p16_1, q8s_1);
+			p16_2 = _mm_sub_epi16(p16_2, q8s_2);
+			p16_3 = _mm_sub_epi16(p16_3, q8s_3);
+			p16_4 = _mm_sub_epi16(p16_4, q8s_4);
+			p16_5 = _mm_sub_epi16(p16_5, q8s_5);
+			p16_6 = _mm_sub_epi16(p16_6, q8s_6);
+			p16_7 = _mm_sub_epi16(p16_7, q8s_7);
+
+			const __m128i scale_0 = _mm_shuffle_epi8(scales, shuffle);
+			shuffle = _mm_add_epi8(shuffle, m2);
+			const __m128i scale_1 = _mm_shuffle_epi8(scales, shuffle);
+			shuffle = _mm_add_epi8(shuffle, m2);
+			const __m128i scale_2 = _mm_shuffle_epi8(scales, shuffle);
+			shuffle = _mm_add_epi8(shuffle, m2);
+			const __m128i scale_3 = _mm_shuffle_epi8(scales, shuffle);
+			shuffle = _mm_add_epi8(shuffle, m2);
+
+			p16_0 = _mm_madd_epi16(_mm_cvtepi8_epi16(scale_0), p16_0);
+			p16_1 = _mm_madd_epi16(_mm_cvtepi8_epi16(_mm_unpackhi_epi64(scale_0, scale_0)), p16_1);
+			p16_2 = _mm_madd_epi16(_mm_cvtepi8_epi16(scale_1), p16_2);
+			p16_3 = _mm_madd_epi16(_mm_cvtepi8_epi16(_mm_unpackhi_epi64(scale_1, scale_1)), p16_3);
+			p16_4 = _mm_madd_epi16(_mm_cvtepi8_epi16(scale_2), p16_4);
+			p16_5 = _mm_madd_epi16(_mm_cvtepi8_epi16(_mm_unpackhi_epi64(scale_2, scale_2)), p16_5);
+			p16_6 = _mm_madd_epi16(_mm_cvtepi8_epi16(scale_3), p16_6);
+			p16_7 = _mm_madd_epi16(_mm_cvtepi8_epi16(_mm_unpackhi_epi64(scale_3, scale_3)), p16_7);
+
+			sumi_0 = _mm_add_epi32(sumi_0, _mm_add_epi32(p16_0, p16_2));
+			sumi_1 = _mm_add_epi32(sumi_1, _mm_add_epi32(p16_1, p16_3));
+			sumi_0 = _mm_add_epi32(sumi_0, _mm_add_epi32(p16_4, p16_6));
+			sumi_1 = _mm_add_epi32(sumi_1, _mm_add_epi32(p16_5, p16_7));
 		}
 
-		// Perform horizontal add
-		sum_vec = _mm256_hadd_ps(sum_vec, sum_vec);
-		sum_vec = _mm256_hadd_ps(sum_vec, sum_vec);
-		static __attribute__((aligned(32))) real vals[8];
-		_mm256_store_ps(vals, sum_vec);
-//		_mm256_storeu_ps(vals, sum_vec);
-		float val = vals[0] + vals[4];
-
-		// handle remainder if n is not a multiple of 8
-		for (int j=nn; j<n; j++) {
-			val += w[i_n + j] * x[j];
-		}
-		o[i] = val;
+		const float d = cats_compute_fp16_to_fp32(*((uint16_t*)(p +256/2 +256/4 +256/16))) * (*(float*)q8);
+		__m256i sumi = MM256_SET_M128I(sumi_1, sumi_0);
+		acc = _mm256_add_ps(_mm256_mul_ps(_mm256_broadcast_ss(&d), _mm256_cvtepi32_ps(sumi)), acc);
 	}
+	return hsum_float_8(acc);
 }
-#endif
-/*void matmul_arm(float *xout, float *x, float *w, int n, int d)
+#define MATMUL_FUNC(name, dotfunc, wtype, xtype, len) \
+static void name(real* __restrict xout, void* __restrict x, void* __restrict w, int n, int d) \
+{ \
+	omp_set_num_threads(8); \
+	_Pragma("omp parallel for") \
+	for (int i=0; i<(d); i++) { \
+		xout[i] = dotfunc(((wtype*)w)+len, (xtype*)x, (n)); \
+	} \
+}
+MATMUL_FUNC(matmul_avx, sdot_avx, real, real, i*n); // 580
+MATMUL_FUNC(matmul_q4_0_avx, dot_avx_q4_0, uint8_t, real, i*n/32*18); // 2.9
+MATMUL_FUNC(matmul_q4_0_q8, dot_q4_0_q8, uint8_t, int8_t, i*n/32*18); // 1.0
+MATMUL_FUNC(matmul_q4_0_q8_avx, dot_q4_0_q8_avx, uint8_t, int8_t, i*n/32*18); // 5.5
+//MATMUL_FUNC(matmul_q6_K_q8_K, dot_q6_K_q8_K, uint8_t, int8_t, i*n/256*210); // 4.9 (case of only 1 use)
+MATMUL_FUNC(matmul_q6_K_q8_K, dot_q6_K_q8_K_avx, uint8_t, int8_t, i*n/256*210); // 5.4
+/*static void matmul_arm(float *xout, float *x, float *w, int n, int d)
 {
 	int i;
 	#pragma omp parallel for private(i)
@@ -612,42 +1096,8 @@ static inline void matmul(real* o, const real* x, const real* w, int n, int d)
 		xout[i] = vaddvq_f32(val);
 	}
 }*/
-#elif defined(__SSE__)
-static inline float sdot_sse(const float *x, const float *y, unsigned n)
-{
-	unsigned i, n8 = n>>3<<3;
-	__m128 vs1, vs2;
-	float s;
-	static __attribute__((aligned(16))) float t[4];
-	vs1 = _mm_setzero_ps();
-	vs2 = _mm_setzero_ps();
-	for (i=0; i<n8; i+=8) {
-		__m128 vx1, vx2, vy1, vy2;
-		vx1 = _mm_loadu_ps(&x[i]);
-		vx2 = _mm_loadu_ps(&x[i+4]);
-		vy1 = _mm_loadu_ps(&y[i]);
-		vy2 = _mm_loadu_ps(&y[i+4]);
-		vs1 = _mm_add_ps(vs1, _mm_mul_ps(vx1, vy1));
-		vs2 = _mm_add_ps(vs2, _mm_mul_ps(vx2, vy2));
-	}
-	for (s=0.0; i<n; ++i) s += x[i] * y[i];
-	_mm_storeu_ps(t, vs1);
-	s += t[0] + t[1] + t[2] + t[3];
-	_mm_storeu_ps(t, vs2);
-	s += t[0] + t[1] + t[2] + t[3];
-	return s;
-}
-static inline void matmul(float* xout, float* x, float* w, int n, int d)
-{
-	// W (d,n) @ x (n,) -> xout (d,)
-	int i;
-	#pragma omp parallel for private(i)
-	for (i=0; i<d; i++) {
-		xout[i] = sdot_sse(&w[i*n], x, n);
-	}
-}
 #else
-static inline void matmul(real* xout, real* x, real* w, int n, int d)
+static void matmul_naive(real* xout, real* x, real* w, int n, int d)
 {
 	// W (d,n) @ x (n,) -> xout (d,)
 	// by far the most amount of time is spent inside this little function
@@ -666,6 +1116,54 @@ static inline void matmul(real* xout, real* x, real* w, int n, int d)
 }
 #endif
 
+static void rope_falcon(real *q, real *k, int dim, int kv_dim, int head_size, int pos)
+{
+	int i;
+	#pragma omp parallel for private(i)
+	for (i=0; i<dim; i++) {
+		int hdim = i % (head_size/2);
+		int n = i + hdim;
+		int m = i + hdim + head_size/2;
+		float freq = 1.0 / powf(10000.0, 2.0 * hdim / (float)head_size);
+		float val = pos * freq;
+		float fcr = cosf(val);
+		float fci = sinf(val);
+		float q0 = q[n];
+		float q1 = q[m];
+		q[n] = q0 * fcr - q1 * fci;
+		q[m] = q0 * fci + q1 * fcr;
+		if (i < kv_dim) {
+			float k0 = k[n];
+			float k1 = k[m];
+			k[n] = k0 * fcr - k1 * fci;
+			k[m] = k0 * fci + k1 * fcr;
+		}
+	}
+}
+static void rope_llama(real *q, real *k, int dim, int kv_dim, int head_size, int pos)
+{
+	int i;
+	#pragma omp parallel for private(i)
+	for (i=0; i<dim; i+=2) {
+		int head_dim = i % head_size;
+		float freq = 1.0 / powf(10000.0, head_dim / (float)head_size);
+		float val = pos * freq;
+		float fcr = cosf(val);
+		float fci = sinf(val);
+		real q0 = q[i];
+		real q1 = q[i+1];
+		q[i]   = q0 * fcr - q1 * fci;
+		q[i+1] = q0 * fci + q1 * fcr;
+		// rotate k
+		if (i < kv_dim) {
+			real k0 = k[i];
+			real k1 = k[i+1];
+			k[i  ] = k0 * fcr - k1 * fci;
+			k[i+1] = k0 * fci + k1 * fcr;
+		}
+	}
+}
+
 // https://qiita.com/birdwatcher/items/b3e4428f63f708db37b7
 // https://github.com/RahulSChand/llama2.c-for-dummies
 static real* cats_llama2_transformer(int token, int pos, cats_ggml_model* m)
@@ -677,74 +1175,33 @@ static real* cats_llama2_transformer(int token, int pos, cats_ggml_model* m)
 	int kv_mul = m->n_head / m->n_kv_head; // integer multiplier of the kv sharing in multiquery
 	int hidden_dim =  m->n_hidden;
 	int head_size = dim / m->n_head;
-	real sqrt_head_size = 1.0 / sqrtf(head_size);
+//	real sqrt_head_size = 1.0 / sqrtf(head_size);
 
 	// Convert the token to a real vector (int -> vector)
 	// copy the token embedding into x
-	memcpy(x, m->token_embedding_table->data +token * dim *sizeof(real), dim*sizeof(real));
-
-	// pluck out the "pos" row of freq_cis_real and freq_cis_imag
-//	real* freq_cis_real_row = w->freq_cis_real + pos * head_size / 2;
-//	real* freq_cis_imag_row = w->freq_cis_imag + pos * head_size / 2;
+	dequantize(x, m->token_embedding_table->data, token, dim);
 
 	// forward all the layers
 	for (int l=0; l<m->n_layer; l++) {
 		// attention rmsnorm
 		rmsnorm(m->xb, x, m->rms_att_weight[l]->data, dim); // S = T = norm x -> mul weight
 
+		// key and value point to the kv cache
+		int loff = l * m->seq_len * kv_dim; // kv cache layer offset for convenience
+		real* k = m->key_cache + loff + pos * kv_dim;
+		real* v = m->value_cache + loff + pos * kv_dim;
+
 		// qkv matmuls for this position
-		matmul(m->q, m->xb, m->wq[l]->data, dim, dim); // Q = TWq
-		matmul(m->k, m->xb, m->wk[l]->data, dim, kv_dim); // K = SWk
-		matmul(m->v, m->xb, m->wv[l]->data, dim, kv_dim); // V = Swv
+		m->wq[l]->quantize((int8_t*)m->xb, m->xb, dim);
+		m->wq[l]->matmul(m->q, m->xb, m->wq[l]->data, dim, dim); // Q = TWq
+		m->wk[l]->matmul(k, m->xb, m->wk[l]->data, dim, kv_dim); // K = SWk
+		m->wv[l]->matmul(v, m->xb, m->wv[l]->data, dim, kv_dim); // V = Swv
 
 		// Positional Encoding: x + PE
 		//   PE(pos,2i)   := sin(pos/10000^2*i/d)
 		//   PE(pos,2i+1) := cos(pos/10000^2*i/d)
 		// RoPE relative positional encoding: complex-valued rotate q and k by freq_cis in each head
-		/*for (int i=0; i<dim; i+=2) {
-			real q0 = s->q[i];
-			real q1 = s->q[i+1];
-			real fcr = freq_cis_real_row[(i % head_size) / 2];
-			real fci = freq_cis_imag_row[(i % head_size) / 2];
-			s->q[i]   = q0 * fcr - q1 * fci;
-			s->q[i+1] = q0 * fci + q1 * fcr;
-		}
-		for (int i=0; i<kv_dim; i+=2) {
-			real k0 = s->k[i];
-			real k1 = s->k[i+1];
-			real fcr = freq_cis_real_row[(i % head_size) / 2];
-			real fci = freq_cis_imag_row[(i % head_size) / 2];
-			s->k[i]   = k0 * fcr - k1 * fci;
-			s->k[i+1] = k0 * fci + k1 * fcr;
-		}*/
-		int i;
-		#pragma omp parallel for private(i)
-		for (int i=0; i<dim; i+=2) {
-			int head_dim = i % head_size;
-			real freq = 1.0f / powf(10000.0f, head_dim / (real)head_size);
-			real val = pos * freq;
-			real fcr = cosf(val);
-			real fci = sinf(val);
-			// rotate q
-			real q0  = m->q[i];
-			real q1  = m->q[i+1];
-			m->q[i]   = q0 * fcr - q1 * fci;
-			m->q[i+1] = q0 * fci + q1 * fcr;
-			// rotate k
-			if (i < kv_dim) {
-				real k0  = m->k[i];
-				real k1  = m->k[i+1];
-				m->k[i]   = k0 * fcr - k1 * fci;
-				m->k[i+1] = k0 * fci + k1 * fcr;
-			}
-		}
-
-		// save key,value at this time step (pos) to our kv cache
-		int loff = l * m->seq_len * kv_dim; // kv cache layer offset for convenience
-		real* key_cache_row = m->key_cache + loff + pos * kv_dim;
-		real* value_cache_row = m->value_cache + loff + pos * kv_dim;
-		memcpy(key_cache_row, m->k, kv_dim*sizeof(*key_cache_row));
-		memcpy(value_cache_row, m->v, kv_dim*sizeof(*value_cache_row));
+		rope_llama(m->q, k, dim, kv_dim, head_size, pos);
 
 		// multihead attention. iterate over all heads
 		int h;
@@ -784,7 +1241,8 @@ static real* cats_llama2_transformer(int token, int pos, cats_ggml_model* m)
 			}*/
 			real* xb = m->xb + h * head_size;
 			memset(xb, 0, head_size * sizeof(real));
-			for (int t=0; t<=pos; t++) { // Mask?
+//			int ts = pos>10 ? pos-10 : 0;
+			for (int t=0/*ts*/; t<=pos; t++) { // Mask?
 				// get the value vector for this head and at this timestep
 //				real* v = s->value_cache + loff + t * dim + h * head_size;
 				real* v = m->value_cache + loff + t * kv_dim + (h / kv_mul) * head_size;
@@ -798,7 +1256,8 @@ static real* cats_llama2_transformer(int token, int pos, cats_ggml_model* m)
 		}
 
 		// final matmul to get the output of the attention
-		matmul(m->xb2, m->xb, m->wo[l]->data, dim, dim);
+		m->wo[l]->quantize((int8_t*)m->xb, m->xb, dim);
+		m->wo[l]->matmul(m->xb2, m->xb, m->wo[l]->data, dim, dim);
 
 		// Add & Norm
 		// residual connection back into x
@@ -811,8 +1270,9 @@ static real* cats_llama2_transformer(int token, int pos, cats_ggml_model* m)
 		// Feed Forward
 		// Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
 		// first calculate self.w1(x) and self.w3(x)
-		matmul(m->hb, m->xb, m->w1[l]->data, dim, hidden_dim);
-		matmul(m->hb2, m->xb, m->w3[l]->data, dim, hidden_dim);
+		m->w1[l]->quantize((int8_t*)m->xb, m->xb, dim);
+		m->w1[l]->matmul(m->hb, m->xb, m->w1[l]->data, dim, hidden_dim);
+		m->w3[l]->matmul(m->hb2, m->xb, m->w3[l]->data, dim, hidden_dim);
 		// SwiGLU non-linearity
 		for (int i=0; i<hidden_dim; i++) {
 			real val = m->hb[i];
@@ -823,7 +1283,8 @@ static real* cats_llama2_transformer(int token, int pos, cats_ggml_model* m)
 			m->hb[i] = val;
 		}
 		// final matmul to get the output of the ffn
-		matmul(m->xb, m->hb, m->w2[l]->data, hidden_dim, dim);
+		m->w2[l]->quantize((int8_t*)m->hb, m->hb, hidden_dim);
+		m->w2[l]->matmul(m->xb, m->hb, m->w2[l]->data, hidden_dim, dim);
 
 		// Add & Norm
 		// residual connection
@@ -837,7 +1298,8 @@ static real* cats_llama2_transformer(int token, int pos, cats_ggml_model* m)
 
 	// Linear
 	// classifier into logits
-	matmul(m->logits, x, m->wcls->data, dim, m->n_vocab);
+	m->wcls->quantize((int8_t*)x, x, dim);
+	m->wcls->matmul(m->logits, x, m->wcls->data, dim, m->n_vocab);
 	return m->logits;
 }
 
@@ -1033,8 +1495,6 @@ static int sample_argmax(real* probabilities, int n)
 static int sample_mult(real* probabilities, int n, real coin)
 {
 	// sample index from probabilities (they must sum to 1!)
-//	real coin = (real)rand() / (real)RAND_MAX;
-//	real coin = random_f32();
 	real cdf = 0.0;
 	for (int i=0; i<n; i++) {
 		cdf += probabilities[i];
@@ -1099,7 +1559,7 @@ int sample_topp(real* probabilities, int n, real topp, ProbIndex* probindex, rea
 
 void generate(cats_ggml_model *m, char *prompt, int steps, real temperature, real topp)
 {
-/*	// encode the (string) prompt into tokens sequence
+	// encode the (string) prompt into tokens sequence
 	if (prompt == NULL) prompt = "";
 	int num_prompt_tokens = 0;
 	int* prompt_tokens = (int*)malloc((strlen(prompt)+3) * sizeof(int)); // +3 for '\0', ?BOS, ?EOS
@@ -1174,9 +1634,9 @@ void generate(cats_ggml_model *m, char *prompt, int steps, real temperature, rea
 		fprintf(stderr, "achieved tok/s: %f\n", (pos-1) / (double)(end-start)*1000);
 	}
 	free(prompt_tokens);
-	free(probindex);*/
+	free(probindex);
 
-	// process the prompt, if any
+/*	// process the prompt, if any
 	int *prompt_tokens = NULL;
 	int num_prompt_tokens = 0;
 	if (prompt != NULL) {
@@ -1258,7 +1718,7 @@ void generate(cats_ggml_model *m, char *prompt, int steps, real temperature, rea
 	long end = time_in_ms();
 	printf("\nachieved tok/s: %f\n", (steps-1) / (double)(end-start)*1000);
 
-	free(probindex);
+	free(probindex);*/
 }
 
 static void read_stdin(const char* guide, char* buffer, size_t bufsize)
@@ -1437,196 +1897,32 @@ static void cats_read_vocab(int fd, int size, char **word, float *score, int typ
 	}*/
 }
 
-static void dequantize(int fd, int type, uint64_t size, float *data, int f)
+static void dequantize_file(int fd, cats_tensor *t, int f)
 {
 	if (f) {
-		read(fd, data, size);
+		t->quantize = quantize_q8;
+		t->matmul = matmul_q4_0_q8_avx;
+		read(fd, t->data, t->size);
 		return;
 	}
-	switch (type) {
+
+	// unzip to f32
+	t->matmul = matmul_avx;
+	switch (t->type) {
 //	case LLAMA_FTYPE_MOSTLY_F16:
 	case LLAMA_FTYPE_ALL_F32:
-		read(fd, data, size);
+		read(fd, t->data, t->size);
 		break;
 	case LLAMA_FTYPE_MOSTLY_Q4_0:
-		uint16_t d;
-		for (int i=0; i<size/18; i++) {
-			read(fd, &d, sizeof(uint16_t));
-			float delta = cats_compute_fp16_to_fp32(d);
-			static uint8_t qs[QK4_0/2];
-			read(fd, qs, QK4_0/2);
-
-			float *y0 = data+i*32;
-			float *y1 = data+i*32 +QK4_0/2;
-			uint8_t *p = qs;
-			*y0++ = ((*p   & 0x0F) - 8)*delta;
-			*y1++ = ((*p++ >>   4) - 8)*delta;
-			*y0++ = ((*p   & 0x0F) - 8)*delta;
-			*y1++ = ((*p++ >>   4) - 8)*delta;
-			*y0++ = ((*p   & 0x0F) - 8)*delta;
-			*y1++ = ((*p++ >>   4) - 8)*delta;
-			*y0++ = ((*p   & 0x0F) - 8)*delta;
-			*y1++ = ((*p++ >>   4) - 8)*delta;
-
-			*y0++ = ((*p   & 0x0F) - 8)*delta;
-			*y1++ = ((*p++ >>   4) - 8)*delta;
-			*y0++ = ((*p   & 0x0F) - 8)*delta;
-			*y1++ = ((*p++ >>   4) - 8)*delta;
-			*y0++ = ((*p   & 0x0F) - 8)*delta;
-			*y1++ = ((*p++ >>   4) - 8)*delta;
-			*y0++ = ((*p   & 0x0F) - 8)*delta;
-			*y1++ = ((*p++ >>   4) - 8)*delta;
-
-			*y0++ = ((*p   & 0x0F) - 8)*delta;
-			*y1++ = ((*p++ >>   4) - 8)*delta;
-			*y0++ = ((*p   & 0x0F) - 8)*delta;
-			*y1++ = ((*p++ >>   4) - 8)*delta;
-			*y0++ = ((*p   & 0x0F) - 8)*delta;
-			*y1++ = ((*p++ >>   4) - 8)*delta;
-			*y0++ = ((*p   & 0x0F) - 8)*delta;
-			*y1++ = ((*p++ >>   4) - 8)*delta;
-
-			*y0++ = ((*p   & 0x0F) - 8)*delta;
-			*y1++ = ((*p++ >>   4) - 8)*delta;
-			*y0++ = ((*p   & 0x0F) - 8)*delta;
-			*y1++ = ((*p++ >>   4) - 8)*delta;
-			*y0++ = ((*p   & 0x0F) - 8)*delta;
-			*y1++ = ((*p++ >>   4) - 8)*delta;
-			*y0++ = ((*p   & 0x0F) - 8)*delta;
-			*y1++ = ((*p   >>   4) - 8)*delta;
-		}
+		uint8_t *d = malloc(t->size);
+		read(fd, d, t->size);
+		dequantize_q4_0(t->data, d, (t->size/18)*32);
+		free(d);
 		break;
 	default:
-		printf("Not support: %d\n", type);
+		printf("Not support: %d\n", t->type);
 	}
 	return;
-}
-
-/*def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
-    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
-    t = torch.arange(end, device=freqs.device)  # type: ignore
-    freqs = torch.outer(t, freqs).float()  # type: ignore
-    freqs_cos = torch.cos(freqs)  # real part
-    freqs_sin = torch.sin(freqs)  # imaginary part
-    return freqs_cos, freqs_sin*/
-//freqs_cos, freqs_sin = precompute_freqs_cis(p['dim'] // p['n_heads'], p['max_seq_len'] * 2)
-/*void precompute_freqs_cis(int dim, int end, float theta, float *freqs_cos, float *freqs_sin)
-{
-	// Compute the frequencies: cos(theta) + i sin(theta)
-	float *c = freqs_cos;
-	float *s = freqs_sin;
-	for (int i=0; i<end; i++) {
-		for (int j=0; j<dim/2; j++) {
-			// 10000^2*(i-1)/d
-			float freq = i / (pow(theta, j*2.0 / dim));
-			*c++ = cos(freq);
-			*s++ = sin(freq);
-		}
-	}
-}*/
-
-static int cats_checkpoint_load(char *checkpoint, cats_ggml_model *m)
-{
-/*	FILE *file = fopen(checkpoint, "rb");
-	if (!file) {
-		fprintf(stderr, "Couldn't open file %s\n", checkpoint);
-		return 0;
-	}
-	// read in the config header
-	if (fread(p, sizeof(cats_llama2_model), 1, file) != 1) {
-		return 0;
-	}
-	// negative vocab size is hacky way of signaling unshared weights. bit yikes.
-	int shared_weights = p->vocab_size > 0 ? 1 : 0;
-	p->vocab_size = abs(p->vocab_size);
-	// figure out the file size
-	fseek(file, 0, SEEK_END); // move file pointer to end of file
-	ssize_t file_size = ftell(file); // get the file size, in bytes
-	fclose(file);*/
-
-	// memory map the Transformer weights into the data pointer
-	int fd = open(checkpoint, O_RDONLY);
-	if (fd == -1) {
-		fprintf(stderr, "open failed!\n");
-		return 0;
-	}
-	/*for (int i=0; i<100; i++) printf("%f,%f ", w->freq_cis_real[i], w->freq_cis_imag[i]);
-	printf("\n");
-	precompute_freqs_cis(p->dim / p->n_heads, p->seq_len, 10000.0, w->freq_cis_real, w->freq_cis_imag);
-	for (int i=0; i<100; i++) printf("%f,%f ", w->freq_cis_real[i], w->freq_cis_imag[i]);
-	printf("\n");*/
-
-	read(fd, &m->n_embd, sizeof(m->n_embd));
-	read(fd, &m->n_hidden, sizeof(m->n_hidden));
-	read(fd, &m->n_layer, sizeof(m->n_layer));
-	read(fd, &m->n_head, sizeof(m->n_head));
-	read(fd, &m->n_kv_head, sizeof(m->n_kv_head));
-	read(fd, &m->n_vocab, sizeof(m->n_vocab));
-	read(fd, &m->seq_len, sizeof(m->seq_len));
-	int shared_weights = m->n_vocab > 0 ? 1 : 0;
-	m->n_vocab = abs(m->n_vocab);
-
-	// for cats_ggml_model
-	int head_size = m->n_embd / m->n_head;
-	m->token_embedding_table = &m->tensor[0];
-	m->rms_final_weight = &m->tensor[1];
-	m->wcls = &m->tensor[2];
-	m->token_embedding_table->data = malloc(sizeof(real) * m->n_vocab * m->n_embd);
-	m->rms_final_weight->data = malloc(sizeof(real) * m->n_embd);
-	m->wcls->data = shared_weights ? m->token_embedding_table->data : malloc(sizeof(real) * m->n_vocab * m->n_embd);
-	for (int i=0; i<m->n_layer; i++) {
-		m->rms_att_weight[i] = &m->tensor[3+i*9];
-		m->rms_att_weight[i]->data = malloc(sizeof(real) * m->n_embd);
-		m->wq[i] = &m->tensor[4+i*9];
-		m->wq[i]->data = malloc(sizeof(real) * m->n_embd * (m->n_head * head_size));
-		m->wk[i] = &m->tensor[5+i*9];
-		m->wk[i]->data = malloc(sizeof(real) * m->n_embd * (m->n_kv_head * head_size));
-		m->wv[i] = &m->tensor[6+i*9];
-		m->wv[i]->data = malloc(sizeof(real) * m->n_embd * (m->n_kv_head * head_size));
-		m->wo[i] = &m->tensor[7+i*9];
-		m->wo[i]->data = malloc(sizeof(real) * (m->n_head * head_size) * m->n_embd);
-		m->rms_ffn_weight[i] = &m->tensor[8+i*9];
-		m->rms_ffn_weight[i]->data = malloc(sizeof(real) * m->n_embd);
-		m->w1[i] = &m->tensor[9+i*9];
-		m->w1[i]->data = malloc(sizeof(real) * m->n_embd * m->n_hidden);
-		m->w2[i] = &m->tensor[10+i*9];
-		m->w2[i]->data = malloc(sizeof(real) * m->n_hidden * m->n_embd);
-		m->w3[i] = &m->tensor[11+i*9];
-		m->w3[i]->data = malloc(sizeof(real) * m->n_embd * m->n_hidden);
-	}
-
-	read(fd, m->token_embedding_table->data, sizeof(real) * m->n_vocab * m->n_embd);
-	for (int l=0; l<m->n_layer; l++) {
-		read(fd, m->rms_att_weight[l]->data, sizeof(real) * m->n_embd);
-	}
-	for (int l=0; l<m->n_layer; l++) {
-		read(fd, m->wq[l]->data, sizeof(real) * m->n_embd * (m->n_head * head_size));
-	}
-	for (int l=0; l<m->n_layer; l++) {
-		read(fd, m->wk[l]->data, sizeof(real) * m->n_embd * (m->n_kv_head * head_size));
-	}
-	for (int l=0; l<m->n_layer; l++) {
-		read(fd, m->wv[l]->data, sizeof(real) * m->n_embd * (m->n_kv_head * head_size));
-	}
-	for (int l=0; l<m->n_layer; l++) {
-		read(fd, m->wo[l]->data, sizeof(real) * (m->n_head * head_size) * m->n_embd);
-	}
-	for (int l=0; l<m->n_layer; l++) {
-		read(fd, m->rms_ffn_weight[l]->data, sizeof(real) * m->n_embd);
-	}
-	for (int l=0; l<m->n_layer; l++) {
-		read(fd, m->w1[l]->data, sizeof(real) * m->n_embd * m->n_hidden);
-	}
-	for (int l=0; l<m->n_layer; l++) {
-		read(fd, m->w2[l]->data, sizeof(real) * m->n_hidden * m->n_embd);
-	}
-	for (int l=0; l<m->n_layer; l++) {
-		read(fd, m->w3[l]->data, sizeof(real) * m->n_embd * m->n_hidden);
-	}
-	read(fd, m->rms_final_weight->data, sizeof(real) * m->n_embd);
-	if (!shared_weights) read(fd, m->wcls->data, sizeof(real) * m->n_vocab * m->n_embd);
-
-	return fd;
 }
 
 static inline uint64_t cats_gsize(int type, uint32_t shape0, uint32_t shape1)
@@ -1640,7 +1936,7 @@ static inline uint64_t cats_gsize(int type, uint32_t shape0, uint32_t shape1)
 	case LLAMA_FTYPE_MOSTLY_Q4_1:
 		return shape0*shape1 / 32 * 24;
 	}
-	printf("error at cats_ggml_getsize\n");
+	printf("error at cats_gsize\n");
 	return 0;
 }
 
@@ -1677,9 +1973,9 @@ static int cats_ggml_load(char *name, cats_ggml_model *m)
 		printf("magic: ggjt ver %d\n", version);
 		break;
 	default:
-		return cats_checkpoint_load(name, m);
-//		fprintf(stderr, "unknown (magic, version) combination: %08x\n", magic);
-//		return -1;
+//		return cats_checkpoint_load(name, m);
+		fprintf(stderr, "unknown (magic, version) combination: %08x\n", magic);
+		return -1;
 	}
 
 	// hparams
@@ -1783,20 +2079,18 @@ static int cats_ggml_load(char *name, cats_ggml_model *m)
 		if (!strcmp(m->tensor[i].name, "tok_embeddings.weight")) {
 			m->tensor[i].data = malloc(cats_gsize(LLAMA_FTYPE_ALL_F32, m->n_vocab * m->n_embd, 0));
 			m->token_embedding_table = &m->tensor[i];
-//			m->token_embedding_table->data = w->token_embedding_table;
-			dequantize(fd, m->tensor[i].type, m->tensor[i].size, m->tensor[i].data, 0); // q4 -> f32
+//			dequantize_file(fd, m->tensor[i].type, m->tensor[i].size, m->tensor[i].data, 0); // q4 -> f32
+			dequantize_file(fd, &m->tensor[i], f);
 //			for (i=0; i<500; i++) printf("%f ", w->token_embedding_table[i]);
 		} else if (!strcmp(m->tensor[i].name, "norm.weight")) {
 			m->tensor[i].data = malloc(cats_gsize(m->tensor[i].type, m->n_embd, 0));
 			m->rms_final_weight = &m->tensor[i];
-//			m->rms_final_weight->data = w->rms_final_weight;
-			dequantize(fd, m->tensor[i].type, m->tensor[i].size, m->tensor[i].data, f);
+			dequantize_file(fd, &m->tensor[i], f);
 //			for (i=0; i<m->tensor[i].size; i++) printf("%f ", w->rms_final_weight[i]);
 		} else if (!strcmp(m->tensor[i].name, "output.weight")) {
 			m->tensor[i].data = malloc(cats_gsize(m->tensor[i].type, m->n_vocab, m->n_embd));
 			m->wcls = &m->tensor[i];
-//			m->wcls->data = w->wcls;
-			dequantize(fd, m->tensor[i].type, m->tensor[i].size, m->tensor[i].data, f);
+			dequantize_file(fd, &m->tensor[i], f);
 //			for (i=0; i<500; i++) printf("%f ", w->wcls[i]);
 		} else {
 			char *s = m->tensor[i].name +7;
@@ -1809,56 +2103,47 @@ static int cats_ggml_load(char *name, cats_ggml_model *m)
 			if (!strcmp(s, "attention.wq.weight")) {
 				m->tensor[i].data = malloc(cats_gsize(m->tensor[i].type, m->n_embd, m->n_embd));
 				m->wq[l] = &m->tensor[i];
-//				m->wq[l]->data = w->wq +(l * m->n_embd * m->n_embd);
-				dequantize(fd, m->tensor[i].type, m->tensor[i].size, m->tensor[i].data, f);
+				dequantize_file(fd, &m->tensor[i], f);
 //				for (i=0; i<500; i++) printf("%f ", w->wq[i]);
 			} else if (!strcmp(s, "attention.wk.weight")) {
 				m->tensor[i].data = malloc(cats_gsize(m->tensor[i].type, m->n_embd, m->n_embd));
 				m->wk[l] = &m->tensor[i];
-//				m->wk[l]->data = w->wk +(l * m->n_embd * m->n_embd);
-				dequantize(fd, m->tensor[i].type, m->tensor[i].size, m->tensor[i].data, f);
+				dequantize_file(fd, &m->tensor[i], f);
 //				for (i=0; i<500; i++) printf("%f ", w->wk[i]);
 			} else if (!strcmp(s, "attention.wv.weight")) {
 				m->tensor[i].data = malloc(cats_gsize(m->tensor[i].type, m->n_embd, m->n_embd));
 				m->wv[l] = &m->tensor[i];
-//				m->wv[l]->data = w->wv +(l * m->n_embd * m->n_embd);
-				dequantize(fd, m->tensor[i].type, m->tensor[i].size, m->tensor[i].data, f);
+				dequantize_file(fd, &m->tensor[i], f);
 //				for (i=0; i<500; i++) printf("%f ", w->wv[i]);
 			} else if (!strcmp(s, "attention.wo.weight")) {
 				m->tensor[i].data = malloc(cats_gsize(m->tensor[i].type, m->n_embd, m->n_embd));
 				m->wo[l] = &m->tensor[i];
-//				m->wo[l]->data = w->wo +(l * m->n_embd * m->n_embd);
-				dequantize(fd, m->tensor[i].type, m->tensor[i].size, m->tensor[i].data, f);
+				dequantize_file(fd, &m->tensor[i], f);
 //				for (i=0; i<500; i++) printf("%f ", w->wo[i]);
 			} else if (!strcmp(s, "attention_norm.weight")) {
 				m->tensor[i].data = malloc(cats_gsize(m->tensor[i].type, m->n_embd, 0));
 				m->rms_att_weight[l] = &m->tensor[i];
-//				m->rms_att_weight[l]->data = w->rms_att_weight +(l * m->n_embd);
-				dequantize(fd, m->tensor[i].type, m->tensor[i].size, m->tensor[i].data, f);
+				dequantize_file(fd, &m->tensor[i], f);
 //				for (i=0; i<500; i++) printf("%f ", w->rms_att_weight[i]);
 			} else if (!strcmp(s, "feed_forward.w1.weight")) {
 				m->tensor[i].data = malloc(cats_gsize(m->tensor[i].type, m->n_embd, m->n_hidden));
 				m->w1[l] = &m->tensor[i];
-//				m->w1[l]->data = w->w1 +(l * m->n_embd * m->n_hidden);
-				dequantize(fd, m->tensor[i].type, m->tensor[i].size, m->tensor[i].data, f);
+				dequantize_file(fd, &m->tensor[i], f);
 //				for (i=0; i<500; i++) printf("%f ", w->w1[i]);
 			} else if (!strcmp(s, "feed_forward.w2.weight")) {
 				m->tensor[i].data = malloc(cats_gsize(m->tensor[i].type, m->n_hidden, m->n_embd));
 				m->w2[l] = &m->tensor[i];
-//				m->w2[l]->data = w->w2 +(l * m->n_hidden * m->n_embd);
-				dequantize(fd, m->tensor[i].type, m->tensor[i].size, m->tensor[i].data, f);
+				dequantize_file(fd, &m->tensor[i], f);
 //				for (i=0; i<500; i++) printf("%f ", w->w2[i]);
 			} else if (!strcmp(s, "feed_forward.w3.weight")) {
 				m->tensor[i].data = malloc(cats_gsize(m->tensor[i].type, m->n_embd, m->n_hidden));
 				m->w3[l] = &m->tensor[i];
-//				m->w3[l]->data = w->w3 +(l * m->n_embd * m->n_hidden);
-				dequantize(fd, m->tensor[i].type, m->tensor[i].size, m->tensor[i].data, f);
+				dequantize_file(fd, &m->tensor[i], f);
 //				for (i=0; i<500; i++) printf("%f ", w->w3[i]);
 			} else if (!strcmp(s, "ffn_norm.weight")) {
 				m->tensor[i].data = malloc(cats_gsize(m->tensor[i].type, m->n_embd, 0));
 				m->rms_ffn_weight[l] = &m->tensor[i];
-//				m->rms_ffn_weight[l]->data = w->rms_ffn_weight +(l * m->n_embd);
-				dequantize(fd, m->tensor[i].type, m->tensor[i].size, m->tensor[i].data, f);
+				dequantize_file(fd, &m->tensor[i], f);
 //				for (i=0; i<500; i++) printf("%f ", w->rms_ffn_weight[i]);
 			} else {
 				printf("Not support %d: %s(%s)\n", l, m->tensor[i].name, s);
@@ -1869,6 +2154,439 @@ static int cats_ggml_load(char *name, cats_ggml_model *m)
 	}
 	putchar('\n');
 
+	// q4_0 * float: 2.8 tokens/sec
+//	quantize = no_quantize;
+//	matmul = matmul_q4_0_avx;
+	// q4_0 * q8: 5.4 tokens/sec
+	dequantize = _dequantize_q4_0;
+	quantize = quantize_q8;
+	matmul = matmul_q4_0_q8_avx;
+
 	close(fd);
 	return 0;
+}
+
+//---------------------------------------------------------
+// GGUF format
+#define GGML_MAX_DIMS		4
+#define GGUF_MAX_STR		64
+
+enum ggml_type {
+	GGML_TYPE_F32  = 0,
+	GGML_TYPE_F16  = 1,
+	GGML_TYPE_Q4_0 = 2,
+	GGML_TYPE_Q4_1 = 3,
+	// GGML_TYPE_Q4_2 = 4, support has been removed
+	// GGML_TYPE_Q4_3 (5) support has been removed
+	GGML_TYPE_Q5_0 = 6,
+	GGML_TYPE_Q5_1 = 7,
+	GGML_TYPE_Q8_0 = 8,
+	GGML_TYPE_Q8_1 = 9,
+	// k-quantizations
+	GGML_TYPE_Q2_K = 10,
+	GGML_TYPE_Q3_K = 11,
+	GGML_TYPE_Q4_K = 12,
+	GGML_TYPE_Q5_K = 13,
+	GGML_TYPE_Q6_K = 14,
+	GGML_TYPE_Q8_K = 15,
+	GGML_TYPE_I8,
+	GGML_TYPE_I16,
+	GGML_TYPE_I32,
+	GGML_TYPE_COUNT,
+};
+void matmul_null(real* restrict, void* restrict, void* restrict, int, int)
+{
+}
+void (*gguf_matmul[])(real* restrict, void* restrict, void* restrict, int, int) = {
+	[GGML_TYPE_F32]  = matmul_avx,
+	[GGML_TYPE_Q4_0] = matmul_q4_0_q8_avx,
+	[GGML_TYPE_Q6_K] = matmul_q6_K_q8_K,
+};
+void quantize_null(int8_t*, real*, int)
+{
+}
+void (*gguf_quantize[])(int8_t*, real*, int) = {
+	[GGML_TYPE_F32]  = quantize_null,
+	[GGML_TYPE_Q4_0] = quantize_q8,
+	[GGML_TYPE_Q6_K] = quantize_q8_K,
+};
+void* (*gguf_dequantize[])(void * restrict, const void * restrict, int, int) = {
+	[GGML_TYPE_F32]  = _dequantize_memcpy,
+	[GGML_TYPE_Q4_0] = _dequantize_q4_0,
+	[GGML_TYPE_Q6_K] = _dequantize_q6_K,
+};
+
+enum gguf_value_type {
+	GGUF_TYPE_UINT8,
+	GGUF_TYPE_INT8,
+	GGUF_TYPE_UINT16,
+	GGUF_TYPE_INT16,
+	GGUF_TYPE_UINT32,
+	GGUF_TYPE_INT32,
+	GGUF_TYPE_FLOAT32,
+	GGUF_TYPE_BOOL,
+	GGUF_TYPE_STRING,
+	GGUF_TYPE_ARRAY,
+	GGUF_TYPE_UINT64,
+	GGUF_TYPE_INT64,
+	GGUF_TYPE_FLOAT64,
+};
+static const size_t gguf_value_size[] = {
+	[GGUF_TYPE_UINT8]   = sizeof(uint8_t),
+	[GGUF_TYPE_INT8]    = sizeof(int8_t),
+	[GGUF_TYPE_UINT16]  = sizeof(uint16_t),
+	[GGUF_TYPE_INT16]   = sizeof(int16_t),
+	[GGUF_TYPE_UINT32]  = sizeof(uint32_t),
+	[GGUF_TYPE_INT32]   = sizeof(int32_t),
+	[GGUF_TYPE_FLOAT32] = sizeof(float),
+	[GGUF_TYPE_BOOL]    = sizeof(uint8_t), //sizeof(bool),
+	[GGUF_TYPE_STRING]  = 0, //sizeof(struct gguf_str),
+	[GGUF_TYPE_UINT64]  = sizeof(uint64_t),
+	[GGUF_TYPE_INT64]   = sizeof(int64_t),
+	[GGUF_TYPE_FLOAT64] = sizeof(double),
+	[GGUF_TYPE_ARRAY]   = 0, // undefined
+};
+
+union gguf_value {
+	uint8_t  uint8;
+	int8_t   int8;
+	uint16_t uint16;
+	int16_t  int16;
+	uint32_t uint32;
+	int32_t  int32;
+	float    float32;
+	uint64_t uint64;
+	int64_t  int64;
+	double   float64;
+	uint8_t  bool_;		// bool
+
+	char str[GGUF_MAX_STR];
+
+	struct {
+		//enum gguf_type type;
+		uint32_t type;
+
+		uint64_t n;	// GGUFv2
+		void * data;
+	} arr;
+};
+
+struct gguf_header {
+	uint32_t magic;
+	uint32_t version;
+	uint64_t n_tensors; // GGUFv2
+	uint64_t n_kv;      // GGUFv2
+};
+
+struct gguf_kv {
+	char key[GGUF_MAX_STR];
+
+	uint32_t type;
+	union gguf_value value;
+};
+
+static int cats_gguf_load(char *name, cats_ggml_model *m)
+{
+	int fd = open(name, O_RDONLY);
+	if (fd == -1) {
+		printf("Failed to open file: %s\n", name);
+		return 1;
+	}
+
+	struct gguf_header header;
+	read(fd, &header, sizeof(header));
+	printf("magic:%x\n", header.magic);
+	printf("version:%d\n", header.version);
+	printf("n_tensors:%d\n", header.n_tensors);
+	printf("n_kv:%d\n", header.n_kv);
+
+	if (header.magic != 0x46554747) {
+		printf("Invalid GGUF file.\n");
+		return 1;
+	}
+	if (header.version != 2) {
+		printf("Unsupported GGUF version.\n");
+		return 1;
+	}
+
+	struct gguf_kv* kv = malloc(header.n_kv * sizeof(struct gguf_kv));
+	for (uint64_t i=0; i<header.n_kv; i++) {
+		uint64_t len;
+		read(fd, &len, sizeof(uint64_t));
+		read(fd, kv[i].key, len);
+		read(fd, &kv[i].type, sizeof(uint32_t));
+		kv[i].key[len] = 0;
+		printf("key #%d: %s (%d)\n", i, kv[i].key, kv[i].type);
+
+		switch (kv[i].type) {
+		case GGUF_TYPE_STRING:
+			read(fd, &len, sizeof(uint64_t));
+			read(fd, &kv[i].value, len);
+			printf("string: %s(%d)\n", kv[i].value.str, len);
+			break;
+		case GGUF_TYPE_ARRAY:
+			read(fd, &kv[i].value.arr.type, sizeof(uint32_t));
+			read(fd, &kv[i].value.arr.n, sizeof(uint64_t));
+			printf("type: %d (%d)\n", kv[i].value.arr.type, kv[i].value.arr.n);
+
+			if (!strcmp(kv[i].key, "tokenizer.ggml.tokens")) {
+				m->n_vocab = kv[i].value.arr.n;
+				m->vocab = (char**)malloc(m->n_vocab * sizeof(char*));
+				for (int n=0; n<kv[i].value.arr.n; n++) {
+					read(fd, &len, sizeof(uint64_t));
+					char buff[256];
+					read(fd, buff, len);
+					buff[len] = 0;
+					uint8_t byte_val;
+					if (sscanf(buff, "<0x%02hhX>", &byte_val) == 1) {
+						m->vocab[n] = (char*)malloc(2);
+						m->vocab[n][0] = byte_val;
+						m->vocab[n][1] = 0;
+					} else {
+						m->vocab[n] = (char*)malloc(len+1);
+						strcpy(m->vocab[n], buff);
+					}
+				}
+				continue;
+			} else if (!strcmp(kv[i].key, "tokenizer.ggml.scores")) {
+				m->n_vocab = kv[i].value.arr.n;
+				m->score = (float*)malloc(m->n_vocab * sizeof(float));
+				read(fd, m->score, gguf_value_size[kv[i].value.arr.type]*kv[i].value.arr.n);
+				continue;
+			}
+
+			if (kv[i].value.arr.type==GGUF_TYPE_STRING) {
+				for (int n=0; n<kv[i].value.arr.n; n++) {
+					char d[256];
+					read(fd, &len, sizeof(uint64_t));
+					read(fd, d, len);
+					d[len] = 0;
+					if (n<5 || n>kv[i].value.arr.n-5) printf("%s ", d);
+				}
+				printf("\n");
+			} else {
+				for (int n=0; n<kv[i].value.arr.n; n++) {
+					union gguf_value value;
+					read(fd, &value, gguf_value_size[kv[i].value.arr.type]);
+					//if (n<5 || n>kv[i].value.arr.n-5) printf("%d ", value);
+				}
+//				read(fd, d, gguf_value_size[kv[i].value.arr.type]*kv[i].value.arr.n);
+//				printf("\n");
+			}
+			break;
+		default:
+			read(fd, &kv[i].value, gguf_value_size[kv[i].type]);
+			printf("value: %d\n", kv[i].value.uint32);
+
+			if (!strcmp(kv[i].key, "llama.context_length")) m->seq_len = kv[i].value.uint32;
+			else if (!strcmp(kv[i].key, "llama.embedding_length")) m->n_embd = kv[i].value.uint32;
+			else if (!strcmp(kv[i].key, "llama.block_count")) m->n_layer = kv[i].value.uint32;
+			else if (!strcmp(kv[i].key, "llama.feed_forward_length")) m->n_hidden = kv[i].value.uint32;
+			else if (!strcmp(kv[i].key, "llama.rope.dimension_count")) m->n_rot = kv[i].value.uint32;
+			else if (!strcmp(kv[i].key, "llama.attention.head_count")) m->n_head = kv[i].value.uint32;
+			else if (!strcmp(kv[i].key, "llama.attention.head_count_kv")) m->n_kv_head = kv[i].value.uint32;
+			else if (!strcmp(kv[i].key, "general.file_type")) m->ftype = kv[i].value.uint32;
+		}
+	}
+
+	cats_tensor* tensor = m->tensor;
+	for (uint64_t i=0; i<header.n_tensors; i++) {
+		uint64_t len;
+		read(fd, &len, sizeof(uint64_t));
+		read(fd, tensor[i].name, len);
+		tensor[i].name[len] = 0;
+
+		read(fd, &tensor[i].n_dim, sizeof(uint32_t));
+		read(fd, tensor[i].dim, sizeof(uint64_t)*tensor[i].n_dim);
+		read(fd, &tensor[i].type, sizeof(uint32_t));
+		read(fd, &tensor[i].offset, sizeof(uint64_t));
+
+		tensor[i].size = tensor[i].dim[0];
+		for (int n=1; n<tensor[i].n_dim; n++) if (tensor[i].dim[n]) tensor[i].size *= tensor[i].dim[n];
+		switch (tensor[i].type) {
+		case GGML_TYPE_F32:
+			tensor[i].size *= sizeof(float);
+			break;
+		case GGML_TYPE_Q4_0:
+			tensor[i].size = (tensor[i].size * 18) / 32;
+			break;
+		case GGML_TYPE_Q4_1:
+			tensor[i].size = (tensor[i].size * 24) / 32;
+			break;
+//		case GGML_TYPE_Q4_K:
+		case GGML_TYPE_Q6_K:
+			tensor[i].size = (tensor[i].size * ((256/2)/*lo4bit*/+(256/4)/*hi2bit*/+(256/16)/*scale*/+2/*global scale*/)) / 256;
+			break;
+		default:
+			printf("%d: Not support %d\n", i, tensor[i].type);
+		}
+
+		printf("%d: %ld %s(%d): %d [%d,%d]\n", i, tensor[i].offset, tensor[i].name, tensor[i].type, tensor[i].size, tensor[i].dim[0], tensor[i].dim[1]);
+	}
+
+//	size_t alignment, offset, size;
+//	read(fd, &alignment, sizeof(size_t));
+//	read(fd, &offset, sizeof(size_t));
+//	read(fd, &size, sizeof(size_t));
+//	printf("alignment: %d\n", alignment);
+//	printf("offset: %ld\n", offset);
+//	printf("size: %x\n", size);
+	lseek(fd, (lseek(fd, 0, SEEK_CUR)+31)&-32, SEEK_SET); // general.alignment: 32
+
+	size_t off = lseek(fd, 0, SEEK_CUR);
+	for (int i=0; i<header.n_tensors; i++) {
+		lseek(fd, off +m->tensor[i].offset, SEEK_SET);
+
+		m->tensor[i].quantize = gguf_quantize[m->tensor[i].type];
+		m->tensor[i].matmul = gguf_matmul[m->tensor[i].type];
+		m->tensor[i].data = malloc(m->tensor[i].size);
+		read(fd, m->tensor[i].data, m->tensor[i].size);
+
+		if (!strcmp(m->tensor[i].name, "token_embd.weight")) {
+			m->token_embedding_table = &m->tensor[i];
+			dequantize = gguf_dequantize[m->tensor[i].type];
+		} else if (!strcmp(m->tensor[i].name, "output_norm.weight")) {
+			m->rms_final_weight = &m->tensor[i];
+//			for (int n=0; n<m->tensor[i].size/sizeof(float); n++) printf("%f ", ((float*)m->tensor[i].data)[n]);
+		} else if (!strcmp(m->tensor[i].name, "output.weight")) { // q6
+			m->wcls = &m->tensor[i];
+		} else {
+			char *s = m->tensor[i].name +4; // 'blk.'
+			int l = atoi(s);
+//			printf("layer %d: %s\n", l, s);
+
+			s += 2;
+			if (l>9) s++;
+
+			if (!strcmp(s, "attn_q.weight")) {
+				m->wq[l] = &m->tensor[i];
+			} else if (!strcmp(s, "attn_k.weight")) {
+				m->wk[l] = &m->tensor[i];
+			} else if (!strcmp(s, "attn_v.weight")) {
+				m->wv[l] = &m->tensor[i];
+			} else if (!strcmp(s, "attn_output.weight")) {
+				m->wo[l] = &m->tensor[i];
+			} else if (!strcmp(s, "attn_norm.weight")) {
+				m->rms_att_weight[l] = &m->tensor[i];
+			} else if (!strcmp(s, "ffn_gate.weight")) {
+				m->w1[l] = &m->tensor[i];
+			} else if (!strcmp(s, "ffn_down.weight")) {
+				m->w2[l] = &m->tensor[i];
+			} else if (!strcmp(s, "ffn_up.weight")) {
+				m->w3[l] = &m->tensor[i];
+			} else if (!strcmp(s, "ffn_norm.weight")) {
+				m->rms_ffn_weight[l] = &m->tensor[i];
+//				for (int n=0; n<m->tensor[i].size/sizeof(float); n++) printf("%f ", ((float*)m->tensor[i].data)[n]);
+			} else {
+				printf("Not support %d: %s(%s)\n", l, m->tensor[i].name, s);
+			}
+		}
+		putchar('.');
+		fflush(stdout);
+	}
+	putchar('\n');
+
+//	dequantize = _dequantize_q4_0;
+//	dequantize = _dequantize_q6_K;
+	quantize = quantize_q8;
+	matmul = matmul_q4_0_q8_avx;
+
+	close(fd);
+}
+
+//---------------------------------------------------------
+// bin format
+
+static int cats_checkpoint_load(char *checkpoint, cats_ggml_model *m)
+{
+	// memory map the Transformer weights into the data pointer
+	int fd = open(checkpoint, O_RDONLY);
+	if (fd == -1) {
+		fprintf(stderr, "open failed!\n");
+		return 0;
+	}
+	/*for (int i=0; i<100; i++) printf("%f,%f ", w->freq_cis_real[i], w->freq_cis_imag[i]);
+	printf("\n");
+	precompute_freqs_cis(p->dim / p->n_heads, p->seq_len, 10000.0, w->freq_cis_real, w->freq_cis_imag);
+	for (int i=0; i<100; i++) printf("%f,%f ", w->freq_cis_real[i], w->freq_cis_imag[i]);
+	printf("\n");*/
+
+	read(fd, &m->n_embd, sizeof(m->n_embd));
+	read(fd, &m->n_hidden, sizeof(m->n_hidden));
+	read(fd, &m->n_layer, sizeof(m->n_layer));
+	read(fd, &m->n_head, sizeof(m->n_head));
+	read(fd, &m->n_kv_head, sizeof(m->n_kv_head));
+	read(fd, &m->n_vocab, sizeof(m->n_vocab));
+	read(fd, &m->seq_len, sizeof(m->seq_len));
+	int shared_weights = m->n_vocab > 0 ? 1 : 0;
+	m->n_vocab = abs(m->n_vocab);
+
+	// for cats_ggml_model
+	int head_size = m->n_embd / m->n_head;
+	m->token_embedding_table = &m->tensor[0];
+	m->rms_final_weight = &m->tensor[1];
+	m->wcls = &m->tensor[2];
+	m->token_embedding_table->data = malloc(sizeof(real) * m->n_vocab * m->n_embd);
+	m->rms_final_weight->data = malloc(sizeof(real) * m->n_embd);
+	m->wcls->data = shared_weights ? m->token_embedding_table->data : malloc(sizeof(real) * m->n_vocab * m->n_embd);
+	for (int i=0; i<m->n_layer; i++) {
+		m->rms_att_weight[i] = &m->tensor[3+i*9];
+		m->rms_att_weight[i]->data = malloc(sizeof(real) * m->n_embd);
+		m->wq[i] = &m->tensor[4+i*9];
+		m->wq[i]->data = malloc(sizeof(real) * m->n_embd * (m->n_head * head_size));
+		m->wk[i] = &m->tensor[5+i*9];
+		m->wk[i]->data = malloc(sizeof(real) * m->n_embd * (m->n_kv_head * head_size));
+		m->wv[i] = &m->tensor[6+i*9];
+		m->wv[i]->data = malloc(sizeof(real) * m->n_embd * (m->n_kv_head * head_size));
+		m->wo[i] = &m->tensor[7+i*9];
+		m->wo[i]->data = malloc(sizeof(real) * (m->n_head * head_size) * m->n_embd);
+		m->rms_ffn_weight[i] = &m->tensor[8+i*9];
+		m->rms_ffn_weight[i]->data = malloc(sizeof(real) * m->n_embd);
+		m->w1[i] = &m->tensor[9+i*9];
+		m->w1[i]->data = malloc(sizeof(real) * m->n_embd * m->n_hidden);
+		m->w2[i] = &m->tensor[10+i*9];
+		m->w2[i]->data = malloc(sizeof(real) * m->n_hidden * m->n_embd);
+		m->w3[i] = &m->tensor[11+i*9];
+		m->w3[i]->data = malloc(sizeof(real) * m->n_embd * m->n_hidden);
+	}
+
+	read(fd, m->token_embedding_table->data, sizeof(real) * m->n_vocab * m->n_embd);
+	for (int l=0; l<m->n_layer; l++) {
+		read(fd, m->rms_att_weight[l]->data, sizeof(real) * m->n_embd);
+	}
+	for (int l=0; l<m->n_layer; l++) {
+		read(fd, m->wq[l]->data, sizeof(real) * m->n_embd * (m->n_head * head_size));
+	}
+	for (int l=0; l<m->n_layer; l++) {
+		read(fd, m->wk[l]->data, sizeof(real) * m->n_embd * (m->n_kv_head * head_size));
+	}
+	for (int l=0; l<m->n_layer; l++) {
+		read(fd, m->wv[l]->data, sizeof(real) * m->n_embd * (m->n_kv_head * head_size));
+	}
+	for (int l=0; l<m->n_layer; l++) {
+		read(fd, m->wo[l]->data, sizeof(real) * (m->n_head * head_size) * m->n_embd);
+	}
+	for (int l=0; l<m->n_layer; l++) {
+		read(fd, m->rms_ffn_weight[l]->data, sizeof(real) * m->n_embd);
+	}
+	for (int l=0; l<m->n_layer; l++) {
+		read(fd, m->w1[l]->data, sizeof(real) * m->n_embd * m->n_hidden);
+	}
+	for (int l=0; l<m->n_layer; l++) {
+		read(fd, m->w2[l]->data, sizeof(real) * m->n_hidden * m->n_embd);
+	}
+	for (int l=0; l<m->n_layer; l++) {
+		read(fd, m->w3[l]->data, sizeof(real) * m->n_embd * m->n_hidden);
+	}
+	read(fd, m->rms_final_weight->data, sizeof(real) * m->n_embd);
+	if (!shared_weights) read(fd, m->wcls->data, sizeof(real) * m->n_vocab * m->n_embd);
+
+	quantize = quantize_null;
+	matmul = matmul_avx;
+	for (int i=0; i<3+9*m->n_layer; i++) {
+		m->tensor[i].quantize = quantize_null;
+		m->tensor[i].matmul = matmul_avx;
+	}
+
+	return fd;
 }

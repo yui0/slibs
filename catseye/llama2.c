@@ -33,8 +33,8 @@ int main(int argc, char *argv[])
 {
 	// default parameters
 	char *model = NULL;
-	char *checkpoint_path = "out/model.bin";
-	char *tokenizer_path = "tokenizer.bin";
+	char *checkpoint_path = "models/model.bin";
+	char *tokenizer_path = "models/tokenizer.bin";
 	char *prompt = NULL;		// prompt string
 	int steps = 256;		// max number of steps to run for, 0: use seq_len
 	float temperature = 1.0;	// 0.0 = greedy deterministic. 1.0 = original. don't set higher
@@ -80,7 +80,8 @@ int main(int argc, char *argv[])
 	// read weight file
 	cats_ggml_model m;
 	if (model) {
-		cats_ggml_load(model, &m);
+		if (strstr(model, ".gguf")) cats_gguf_load(model, &m); //m.seq_len = 2048;
+		else cats_ggml_load(model, &m);
 		m.max_token_length = 512;
 //		m.max_token_length = 4096;
 	} else {
