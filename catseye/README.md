@@ -1,15 +1,35 @@
-# Llama 2
+# LLM
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
+Inference of LLM model in pure C.
+
+### Features
+
+- Plain C implementation without dependencies
+- AVX support for x86 architectures
+- Mixed F16 / F32 precision
+- 3-bit, 4-bit and 6-bit integer quantization support
+  - q3_K_S, q4_0, q6_K
+
+**Supported platforms:**
+
+- [X] Linux
+
+**Supported models:**
+
+- [x] LLaMA 2 🦙🦙
+- [X] [Mistral AI v0.1](https://huggingface.co/mistralai/Mistral-7B-v0.1)
 
 ### How to build
 
 ```
 $ make
 ```
+
 ### How to convert the model
 
 ```
-wget https://huggingface.co/TheBloke/CodeLlama-34B-Instruct-GGUF
-
 mkdir llama2
 cd llama2
 wget https://huggingface.co/kchoi/llama2/raw/main/llama-2-7b/params.json
@@ -25,7 +45,22 @@ python3 export.py llama2_7b_q8.bin --meta-llama ./llama/ --version 2
 
 ```
 $ wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories42M.bin
-$ ./llama2 -c stories42M.bin -t 0.9 -s 256 -p "How are you? Are you fine?"
+$ ./llama2 -c stories42M.bin -t 0.9 -s 10
+transformer dimension: 288
+ffn layers's dimension: 768
+number of layers: 6
+number of query heads: 6
+number of key/value heads: 6
+vocabulary size: 32000
+max sequence length: 256
+seed: 10
+
+1 
+Once upon a time, there was a little girl named Lily. One day, she went to the park with her mommy and daddy. They had a picnic and ate sandwiches with peanut butter and jelly. Lily loved peanut butter the best.
+While they were eating, a big dog came running towards them. The dog was very hairy and scared Lily. She didn't like the dog and started to cry. Her mommy and daddy quickly picked her up and they all ran away from the dog.
+After that, they went to get ice cream. Lily's favorite flavor was chocolate, so her mommy bought her a big chocolate cone. As they were leaving the park, Lily accidentally dropped her cone and it broke into many pieces. She started to cry again.
+But then, something unexpected happened. The hairy dog came running towards Lily and licked her face. Lily stopped crying and laughed. She realized that even though her ice cream cone broke, she still had a great day with her family.
+achieved tok/s: 515.151515
 ```
 
 #### Llama 2 (GGML)
@@ -731,8 +766,14 @@ achieved tok/s: 5.469638
 
 * Tiny Llama 1.1B model
   * The [TinyLlama](https://github.com/jzhang38/TinyLlama) is a 1.1B Llama model trained on 3 trillion tokens.
+  * https://huggingface.co/PY007/TinyLlama-1.1B-Chat-v0.2-GGUF/resolve/main/ggml-model-q4_0.gguf
   * https://huggingface.co/kirp/TinyLlama-1.1B-Chat-v0.2-bin
   * https://github.com/karpathy/llama2.c/pull/408
+* Xwin-LM 13B V0.1
+  * https://huggingface.co/TheBloke/Xwin-LM-13B-V0.1-GGUF/resolve/main/xwin-lm-13b-v0.1.Q3_K_S.gguf
+* Llama2
+  * https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGML
+  * https://huggingface.co/TheBloke/Llama-2-7b-Chat-GGUF/resolve/main/llama-2-7b-chat.Q3_K_S.gguf
 * ELYZA-japanese-Llama-2
   * https://huggingface.co/mmnga/ELYZA-japanese-Llama-2-7b-fast-instruct-gguf/resolve/main/ELYZA-japanese-Llama-2-7b-fast-instruct-q4_0.gguf
 * CodeLlama
