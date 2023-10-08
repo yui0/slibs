@@ -46,6 +46,18 @@ typedef DTYPE	real; // _Float16
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
 //---------------------------------------------------------
+// Tables
+
+// precomputed silu table for f16 (128 KB)
+static uint16_t table_silu_f16[1 << 16];
+
+// precomputed f32 table for f16 (256 KB)
+//static float table_f32_f16[1 << 16];
+// On ARM NEON, it's quicker to directly convert x -> x instead of calling into ggml_lookup_fp16_to_fp32,
+// so we define GGML_FP16_TO_FP32 and GGML_FP32_TO_FP16 elsewhere for NEON.
+// This is also true for POWER9.
+
+//---------------------------------------------------------
 // Quantize
 
 #define QK4_0	32
@@ -55,10 +67,10 @@ typedef DTYPE	real; // _Float16
 #ifdef __F16C__
 #ifdef _MSC_VER
 #define cats_fp16_to_fp32(x) _mm_cvtss_f32(_mm_cvtph_ps(_mm_cvtsi32_si128(x)))
-#define cats_compute_fp32_to_fp16(x) _mm_extract_epi16(_mm_cvtps_ph(_mm_set_ss(x), 0), 0)
+#define cats_fp32_to_fp16(x) _mm_extract_epi16(_mm_cvtps_ph(_mm_set_ss(x), 0), 0)
 #else
 #define cats_fp16_to_fp32(x) _cvtsh_ss(x)
-#define cats_compute_fp32_to_fp16(x) _cvtss_sh(x, 0)
+#define cats_fp32_to_fp16(x) _cvtss_sh(x, 0)
 #endif
 #else
 // ref: https://github.com/Maratyszcza/FP16
@@ -103,7 +115,7 @@ static inline float cats_fp16_to_fp32(uint16_t h)
 		(two_w < denormalized_cutoff ? fp32_to_bits(denormalized_value) : fp32_to_bits(normalized_value));
 	return fp32_from_bits(result);
 }
-static inline uint16_t cats_compute_fp32_to_fp16(real f)
+static inline uint16_t cats_fp32_to_fp16(real f)
 {
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) || defined(__GNUC__) && !defined(__STRICT_ANSI__)
 	const float scale_to_inf = 0x1.0p+112f;
@@ -132,10 +144,11 @@ static inline uint16_t cats_compute_fp32_to_fp16(real f)
 #endif
 
 #ifdef __AVX__
-static void quantize_q8(int8_t* q, real* x, int n)
+static void quantize_q8(int8_t* p, real* x, int n)
 {
-	int nb = n / QK8;
-	for (int i=0; i<nb; i++) {
+	int nb = n>>5; // QK8: 32
+	do {
+//	for (int i=0; i<nb; i++) {
 		// Load elements into 4 AVX vectors
 		__m256 v0 = _mm256_load_ps(x);
 		__m256 v1 = _mm256_load_ps(x+8);
@@ -157,9 +170,8 @@ static void quantize_q8(int8_t* q, real* x, int n)
 
 		// Quantize these floats
 		const float d = maxScalar / 127.;
-//		y[i].d = GGML_FP32_TO_FP16(d);
 		const float id = ( maxScalar != 0.0 ) ? 127. / maxScalar : 0.0;
-		const __m256 mul = _mm256_set1_ps(id);
+		const __m256 mul = _mm256_broadcast_ss(&id);
 
 		// Apply the multiplier
 		v0 = _mm256_mul_ps(v0, mul);
@@ -197,17 +209,18 @@ static void quantize_q8(int8_t* q, real* x, int n)
 		ni0 = _mm_packs_epi16(ni0, ni2);
 		ni4 = _mm_packs_epi16(ni4, ni6);
 
-		int8_t *p = q + i*(32+sizeof(float));
+//		int8_t *p = q + i*(32+sizeof(float));
 		_mm_storeu_si128((__m128i *)(p +  0), ni0);
 		_mm_storeu_si128((__m128i *)(p + 16), ni4);
 		*(float*)(p + 32) = d;
-	}
+		p += 36;
+//	}
+	} while (--nb > 0);
 }
 #else
 static void quantize_q8(int8_t* q, real* x, int n)
 {
 	int num_groups = n / QK8;
-
 	for (int group=0; group<num_groups; group++) {
 		// find the max absolute value in the current group
 		real amax = 0.0;
@@ -242,7 +255,7 @@ static inline int nearest_int(float fval)
 }
 static inline void quantize_q8_K(int8_t* y, real* x, int k)
 {
-	const int nb = k / 256;
+	const int nb = k>>8; // 256
 	for (int i=0; i<nb; i++) {
 		float max = 0;
 		float amax = 0;
@@ -275,9 +288,61 @@ static inline void quantize_q8_K(int8_t* y, real* x, int k)
 		x += 256;
 	}
 }
+/*static void quantize_q8_K(int8_t* p, real* x, int n)
+{
+	int nb = n>>8; // 256
+	do {
+		__m256 v[32];
+		for (int i=0; i<32; i++) v[i] = _mm256_load_ps(x+i*8);
+		x += 256;
+
+		// Compute max(abs(e)) for the block
+		const __m256 signBit = _mm256_set1_ps(-0.0);
+		__m256 maxAbs = _mm256_andnot_ps(signBit, v[0]);
+		for (int i=1; i<32; i++) _mm256_max_ps(maxAbs, _mm256_andnot_ps(signBit, v[i]));
+
+		__m128 max4 = _mm_max_ps(_mm256_extractf128_ps(maxAbs, 1), _mm256_castps256_ps128(maxAbs));
+		max4 = _mm_max_ps(max4, _mm_movehl_ps(max4, max4));
+		max4 = _mm_max_ss(max4, _mm_movehdup_ps(max4));
+		const float maxScalar = _mm_cvtss_f32(max4);
+
+		// Quantize these floats
+		const float d = maxScalar / 127.;
+		const float id = ( maxScalar != 0.0 ) ? 127. / maxScalar : 0.0;
+		const __m256 mul = _mm256_broadcast_ss(&id);
+
+		for (int i=0; i<32; i+=2) {
+			// Apply the multiplier
+			__m256 v0 = _mm256_mul_ps(v[i], mul);
+			__m256 v1 = _mm256_mul_ps(v[i+1], mul);
+			// Round to nearest integer
+			v0 = _mm256_round_ps(v0, _MM_ROUND_NEAREST);
+			v1 = _mm256_round_ps(v1, _MM_ROUND_NEAREST);
+			// Convert floats to integers
+			__m256i i0 = _mm256_cvtps_epi32(v0);
+			__m256i i1 = _mm256_cvtps_epi32(v1);
+
+			__m128i ni0 = _mm256_castsi256_si128(i0);
+			__m128i ni1 = _mm256_extractf128_si256(i0, 1);
+			__m128i ni2 = _mm256_castsi256_si128(i1);
+			__m128i ni3 = _mm256_extractf128_si256(i1, 1);
+
+			// Convert int32 to int16
+			ni0 = _mm_packs_epi32(ni0, ni1);
+			ni2 = _mm_packs_epi32(ni2, ni3);
+			// Convert int16 to int8
+			ni0 = _mm_packs_epi16(ni0, ni2);
+
+			_mm_storeu_si128((__m128i *)p, ni0);
+			p += 16;
+		}
+		*(float*)p = d;
+		p += 4;
+	} while (--nb > 0);
+}*/
 static inline void* dequantize_q3_K(void * restrict _y, const void * restrict x, size_t k)
 {
-	const int nb = k / 256;
+	const int nb = k>>8; // 256
 	float * restrict y = (float*)_y;
 	const uint32_t kmask1 = 0x03030303;
 	const uint32_t kmask2 = 0x0f0f0f0f;
@@ -322,7 +387,7 @@ static inline void* dequantize_q3_K(void * restrict _y, const void * restrict x,
 }
 static inline void* dequantize_q6_K(void * restrict _y, const void * restrict x, size_t k)
 {
-	const int nb = k / 256;
+	const int nb = k>>8; // 256
 	float * restrict y = (float*)_y;
 	for (int i=0; i<nb; i++) {
 		uint8_t *p = (uint8_t*)(x + i*(256/2 +256/4 +256/16 +2));
@@ -336,8 +401,8 @@ static inline void* dequantize_q6_K(void * restrict _y, const void * restrict x,
 			for (int l=0; l<32; ++l) {
 				int is = l/16;
 				const int8_t q1 = (int8_t)((ql[l +  0] & 0xF) | (((qh[l] >> 0) & 3) << 4)) - 32;
-				const int8_t q2 = (int8_t)((ql[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)) - 32;
 				const int8_t q3 = (int8_t)((ql[l +  0]  >> 4) | (((qh[l] >> 4) & 3) << 4)) - 32;
+				const int8_t q2 = (int8_t)((ql[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)) - 32;
 				const int8_t q4 = (int8_t)((ql[l + 32]  >> 4) | (((qh[l] >> 6) & 3) << 4)) - 32;
 				y[l +  0] = d * sc[is + 0] * q1;
 				y[l + 32] = d * sc[is + 2] * q2;
@@ -354,7 +419,7 @@ static inline void* dequantize_q6_K(void * restrict _y, const void * restrict x,
 }
 static inline void* dequantize_q4_0(void * restrict y, const void * restrict x, size_t k)
 {
-	const int nb = k / 32;
+	const int nb = k>>5; // 32
 	for (int i=0; i<nb; i++) {
 		uint8_t *p = (uint8_t*)(x + i*18);
 		const float delta = cats_fp16_to_fp32(*((uint16_t*)p));
@@ -520,7 +585,7 @@ typedef struct {
 
 //---------------------------------------------------------
 
-static void malloc_run_state(cats_ggml_model* m)
+static void cats_ggml_malloc(cats_ggml_model* m)
 {
 	// we calloc instead of malloc to keep valgrind happy
 	int kv_dim = (m->n_embd * m->n_kv_head) / m->n_head;
@@ -543,9 +608,13 @@ static void malloc_run_state(cats_ggml_model* m)
 		fprintf(stderr, "malloc_run_state: malloc failed!\n");
 		exit(1);
 	}
+
+	size_t size;
+	size = m->n_embd*4 +m->n_hidden*2 +m->n_embd +m->n_embd*m->seq_len +m->n_vocab +m->n_layer * m->seq_len * kv_dim *2;
+        printf("memory: %6.2f MB (%ld bytes)\n", size/(1024.0*1024.0), size);
 }
 
-static void free_run_state(cats_ggml_model* m)
+static void cats_ggml_free(cats_ggml_model* m)
 {
 	free(m->x);
 	free(m->xb);
@@ -559,6 +628,28 @@ static void free_run_state(cats_ggml_model* m)
 	free(m->logits);
 	free(m->key_cache);
 	free(m->value_cache);
+
+	for (int i=0; i<m->n_vocab; i++) {
+		free(m->vocab[i]);
+	}
+	free(m->vocab);
+	free(m->score);
+
+	free(m->token_embedding_table->data);
+	m->token_embedding_table->data = NULL;
+	free(m->rms_final_weight->data);
+	if (m->wcls->data) free(m->wcls->data);
+	for (int i=0; i<m->n_layer; i++) {
+		free(m->rms_att_weight[i]->data);
+		free(m->wq[i]->data);
+		free(m->wk[i]->data);
+		free(m->wv[i]->data);
+		free(m->wo[i]->data);
+		free(m->rms_ffn_weight[i]->data);
+		free(m->w1[i]->data);
+		free(m->w2[i]->data);
+		free(m->w3[i]->data);
+	}
 }
 
 //---------------------------------------------------------
@@ -725,21 +816,19 @@ static inline __m256i __mm256_cvtepi8_epi32(__m128i v)
 }
 //#define MM256_SET_M128I(a, b) _mm256_insertf128_si256(_mm256_castsi128_si256(b), (a), 1)
 #define MM256_SET_M128I(a, b) _mm256_set_m128i((a), (b))
-static inline float dot_q4_0_q8_avx(uint8_t *a, int8_t *b, int n)
+static inline float dot_q4_0_q8_avx(uint8_t* __restrict x, int8_t* __restrict y, int n)
 {
 	const __m128i lowMask = _mm_set1_epi8(0xF);
 	const __m128i off = _mm_set1_epi8(8);
 	int nb = n>>5; // 32
 	__m256 acc = _mm256_setzero_ps();
-	for (int i=0; i<nb; ++i) {
-		// Compute combined scale for the block
-		uint8_t *x = a +i*18;
-		float delta = cats_fp16_to_fp32(*(uint16_t*)x);
-		x += 2;
-//		const __m256 d = _mm256_set1_ps( GGML_FP16_TO_FP32(x[i].d) * GGML_FP16_TO_FP32(y[i].d) );
 
-		int8_t *y = b +i*(32+4);
-		const __m128i tmp = _mm_loadu_si128((const __m128i *)x); // 4bit * 16 = 32byte
+	do {
+		// Compute combined scale for the block
+		float delta = cats_fp16_to_fp32(*(uint16_t*)x);
+
+		const __m128i tmp = _mm_loadu_si128((const __m128i *)(x+2)); // 4bit * 16 = 32byte
+		x += 16+2;
 
 		__m128i bx = _mm_and_si128(lowMask, tmp); // 4bit -> 8 bit
 		__m128i by = _mm_loadu_si128((const __m128i *)y); // 8bit * 16 = 128byte
@@ -756,9 +845,11 @@ static inline float dot_q4_0_q8_avx(uint8_t *a, int8_t *b, int n)
 
 		// Apply the scale, and accumulate
 		delta *= *((float*)(y +32));
-		const __m256 d = _mm256_set1_ps(delta);
-		acc = _mm256_add_ps(_mm256_mul_ps(d, p), acc);
-	}
+		y += 32+4;
+		const __m256 d = _mm256_broadcast_ss(&delta);
+		acc = _mm256_add_ps(acc, _mm256_mul_ps(d, p));
+	} while (--nb > 0);
+
 	return hsum_float_8(acc);
 }
 static inline float dot_avx_q4_0(uint8_t* __restrict a, real* __restrict b, int n)
@@ -797,7 +888,7 @@ static inline float dot_avx_q4_0(uint8_t* __restrict a, real* __restrict b, int 
 	return hsum_float_8(acc);
 }
 
-static inline real dot_q4_0_q8(uint8_t *a, int8_t *b, int n)
+static inline real dot_q4_0_q8(uint8_t* __restrict a, int8_t* __restrict b, int n)
 {
 	int nn = n>>5; // 32
 	real val = 0.0;
@@ -854,7 +945,7 @@ static inline real dot_q4_0_q8(uint8_t *a, int8_t *b, int n)
 	}
 	return val;
 }
-static inline real dot_q4_0(uint8_t *a, real *b, int n)
+static inline real dot_q4_0(uint8_t* __restrict a, real* __restrict b, int n)
 {
 	int nn = n>>5; // 32
 	static __attribute__((aligned(32))) real w[32];
@@ -937,7 +1028,7 @@ static inline real dot_q4_0(uint8_t *a, real *b, int n)
 	}
 	return val;
 }
-static inline float sdot_avx(const real *a, const real *b, int n)
+static inline float sdot_avx(const real* __restrict a, const real* __restrict b, int n)
 {
 	int i;
 	int nn = n&~(16-1);
@@ -954,7 +1045,7 @@ static inline float sdot_avx(const real *a, const real *b, int n)
 	for (; i<n; ++i) val += a[i] * b[i];
 	return val;
 }
-static inline real dot_q3_K_q8_K(uint8_t *x, int8_t *y, int n)
+static inline real dot_q3_K_q8_K(uint8_t* __restrict x, int8_t* __restrict y, int n)
 {
 	const uint32_t kmask1 = 0x03030303;
 	const uint32_t kmask2 = 0x0f0f0f0f;
@@ -1015,19 +1106,16 @@ static inline real dot_q3_K_q8_K(uint8_t *x, int8_t *y, int n)
 	for (int l=0; l<8; ++l) sumf += sums[l];
 	return sumf;
 }
-static inline real dot_q3_K_q8_K_avx(uint8_t *x, int8_t *y, int n)
+static inline real dot_q3_K_q8_K_avx(uint8_t* __restrict x, int8_t* __restrict y, int n)
 {
+	const int nb = n>>8; // 256
 	const uint32_t kmask1 = 0x03030303;
 	const uint32_t kmask2 = 0x0f0f0f0f;
-	const int nb = n / 256;
-
 	const __m128i m3 = _mm_set1_epi8(3);
 	const __m128i mone = _mm_set1_epi8(1);
 	const __m128i m32 = _mm_set1_epi8(32);
 	const __m128i m2 = _mm_set1_epi8(2);
-
 	__m256 acc = _mm256_setzero_ps();
-
 	uint32_t *aux;
 
 	for (int i=0; i<nb; ++i) {
@@ -1157,7 +1245,6 @@ static inline real dot_q3_K_q8_K_avx(uint8_t *x, int8_t *y, int n)
 		__m256i sumi = _mm256_set_m128i(sumi_1, sumi_0);
 		acc = _mm256_add_ps(_mm256_mul_ps(_mm256_broadcast_ss(&d), _mm256_cvtepi32_ps(sumi)), acc);
 	}
-
 	return hsum_float_8(acc);
 }
 /*static inline real dot_q4_K_q8_K(uint8_t *x, int8_t *y, int n)
@@ -1230,14 +1317,14 @@ static inline real dot_q3_K_q8_K_avx(uint8_t *x, int8_t *y, int n)
 	for (int l=0; l<8; ++l) sumf += sums[l];
 	return sumf;
 }*/
-static inline real dot_q6_K_q8_K(uint8_t *x, int8_t *y, int n)
+static inline real dot_q6_K_q8_K(uint8_t* __restrict x, int8_t* __restrict y, int n)
 {
 	const int nb = n / 256;
 	int8_t  aux8[256];
 	int16_t aux16[8];
-	float   sums [8];
+	float   sums [8] = {0};
 	int32_t aux32[8];
-	memset(sums, 0, 8*sizeof(float));
+//	memset(sums, 0, 8*sizeof(float));
 
 	float sumf = 0;
 	for (int i=0; i<nb; ++i) {
@@ -1275,9 +1362,9 @@ static inline real dot_q6_K_q8_K(uint8_t *x, int8_t *y, int n)
 	for (int l=0; l<8; ++l) sumf += sums[l];
 	return sumf;
 }
-static inline real dot_q6_K_q8_K_avx(uint8_t *x, int8_t *y, int n)
+static inline real dot_q6_K_q8_K_avx(uint8_t* __restrict x, int8_t* __restrict y, int n)
 {
-	const int nb = n / 256;
+	const int nb = n>>8; // 256
 	const __m128i m4 = _mm_set1_epi8(0xF);
 	const __m128i m3 = _mm_set1_epi8(3);
 	const __m128i m32s = _mm_set1_epi8(32);
@@ -1492,6 +1579,7 @@ static void rope_llama(real *q, real *k, int dim, int kv_dim, int head_size, int
 
 // https://qiita.com/birdwatcher/items/b3e4428f63f708db37b7
 // https://github.com/RahulSChand/llama2.c-for-dummies
+// https://zenn.dev/skypenguins/articles/a7b4cfee63b67c
 static real* cats_llama2_transformer(int token, int pos, cats_ggml_model* m)
 {
 	// a few convenience variables
@@ -1502,6 +1590,20 @@ static real* cats_llama2_transformer(int token, int pos, cats_ggml_model* m)
 	int hidden_dim =  m->n_hidden;
 	int head_size = dim / m->n_head;
 //	real sqrt_head_size = 1.0 / sqrtf(head_size);
+
+/*	static int is_first_call = 1;
+	if (is_first_call) {
+		// initialize GELU, Quick GELU, SILU and EXP F32 tables
+		for (int i=0; i<(1<<16); ++i) {
+			uint16_t ii = i;
+			const float f = cats_fp16_to_fp32(ii); // table_f32_f16[i]
+//			table_gelu_f16[i] = GGML_FP32_TO_FP16(ggml_gelu_f32(f));
+//			table_gelu_quick_f16[i] = GGML_FP32_TO_FP16(ggml_gelu_quick_f32(f));
+			table_silu_f16[i] = cats_fp32_to_fp16(f/(1.0 + expf(-f)));
+//			table_exp_f16[i]  = GGML_FP32_TO_FP16(expf(f));
+		}
+		is_first_call = 0;
+	}*/
 
 	// Convert the token to a real vector (int -> vector)
 	// copy the token embedding into x
@@ -1540,14 +1642,16 @@ static real* cats_llama2_transformer(int token, int pos, cats_ggml_model* m)
 			real* q = m->q + h * head_size; // get the query vector for this head
 			real* att = m->att + h * m->seq_len; // attention scores for this head
 			// iterate over all timesteps, including the current one
-			for (int t=0; t<=pos; t++) { // Mask?
+//			int ts = pos>100 ? pos-100 : 0;
+			for (int t=0/*ts*/; t<=pos; t++) { // Mask?
 				// get the key vector for this head and at this timestep
 				real* k = m->key_cache + loff + t * kv_dim + (h / kv_mul) * head_size;
 				// calculate the attention score as the dot product of q and k
-				real score = 0.0;
+				/*real score = 0.0;
 				for (int i=0; i<head_size; i++) {
 					score += q[i] * k[i];
-				}
+				}*/
+				real score = sdot_avx(q, k, head_size);
 				score /= sqrtf(head_size);
 //				score *= sqrt_head_size;
 				// save the score to the attention buffer
@@ -1558,13 +1662,6 @@ static real* cats_llama2_transformer(int token, int pos, cats_ggml_model* m)
 
 			// Keep the value of featured words and make irrelevant words more irrelevant.
 			// weighted sum of the values, store back into xb
-			/*for (int i=0; i<head_size; i++) {
-				real val = 0.0f;
-				for (int t=0; t<=pos; t++) {
-					val += att[t] * s->value_cache[loff + t * dim + h * head_size + i]; // note bad locality
-				}
-				s->xb[h * head_size + i] = val;
-			}*/
 			real* xb = m->xb + h * head_size;
 			memset(xb, 0, head_size * sizeof(real));
 //			int ts = pos>10 ? pos-10 : 0;
@@ -1604,6 +1701,7 @@ static real* cats_llama2_transformer(int token, int pos, cats_ggml_model* m)
 			real val = m->hb[i];
 			// silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
 			val *= (1.0 / (1.0 + expf(-val)));
+//			val = cats_fp16_to_fp32(table_silu_f16[cats_fp32_to_fp16(val)]);
 			// elementwise multiply with w3(x)
 			val *= m->hb2[i];
 			m->hb[i] = val;
@@ -1709,9 +1807,9 @@ void bpe_encode(char *text, int bos, int eos, char **vocab, real *vocab_scores, 
 	// so prepend a dummy prefix token to the input string, but only if text != ""
 	// TODO: pretty sure this isn't correct in the general case but I don't have the
 	// energy to read more of the sentencepiece code to figure out what it's doing
-	if (text[0] != '\0') {
+/*	if (text[0] != '\0') {
 		tokens[(*n_tokens)++] = str_lookup(" ", sorted_vocab, vocab_size);
-	}
+	}*/
 
 	// Okay UTF-8 time. This will get messy. Here is the reference from Wikipedia:
 	// Code point ↔ UTF-8 conversion
@@ -1751,7 +1849,7 @@ void bpe_encode(char *text, int bos, int eos, char **vocab, real *vocab_scores, 
 			// byte_fallback encoding: just encode each byte as a token
 			// +3 is here because the first 3 vocab elements are <unk>, <s>, </s>
 			// so the individual bytes only start at index 3
-			for (int i=0; i < str_len; i++) {
+			for (int i=0; i<str_len; i++) {
 				tokens[(*n_tokens)++] = (uint8_t)str_buffer[i] + 3;
 			}
 		}
@@ -1782,7 +1880,7 @@ void bpe_encode(char *text, int bos, int eos, char **vocab, real *vocab_scores, 
 		// merge the consecutive pair (best_idx, best_idx+1) into new token best_id
 		tokens[best_idx] = best_id;
 		// delete token at position best_idx+1, shift the entire sequence back 1
-		for (int i = best_idx+1; i < (*n_tokens-1); i++) {
+		for (int i=best_idx+1; i<(*n_tokens-1); i++) {
 			tokens[i] = tokens[i+1];
 		}
 		(*n_tokens)--; // token length decreased
@@ -1894,8 +1992,9 @@ void generate(cats_ggml_model *m, char *prompt, int steps, real temperature, rea
 		fprintf(stderr, "Something is wrong, expected at least 1 prompt token.\n");
 		exit(EXIT_FAILURE);
 	}
+	printf("token id:");
 	for (int i=0; i<num_prompt_tokens; i++) {
-		printf("%d ", prompt_tokens[i]);
+		printf(" %d", prompt_tokens[i]);
 	}
 	printf("\n");
 	ProbIndex *probindex = calloc(m->n_vocab, sizeof(ProbIndex));
@@ -1907,12 +2006,12 @@ void generate(cats_ggml_model *m, char *prompt, int steps, real temperature, rea
 	int pos = 0;	// position in the sequence
 	while (pos < steps) {
 		// forward the transformer to get logits for the next token
-		real* logits = cats_llama2_transformer(token, pos, m);
+		real* logits = cats_llama2_transformer(token, pos++, m);
 
 		// advance the state machine
-		if (pos < num_prompt_tokens - 1) {
+		if (pos < num_prompt_tokens) {
 			// if we are still processing the input prompt, force the next prompt token
-			next = prompt_tokens[pos + 1];
+			next = prompt_tokens[pos];
 		} else {
 			// otherwise sample the next token from the logits
 			if (temperature == 0.0) {
@@ -1938,10 +2037,9 @@ void generate(cats_ggml_model *m, char *prompt, int steps, real temperature, rea
 				}
 			}
 		}
-		pos++;
-
 		// data-dependent terminating condition: the BOS (=1) token delimits sequences
-		if (next == 1) break;
+		if (next==1/*<s>*/) break;
+//		if (next==1/*<s>*/ || next==2/*</s>*/) break;
 
 		// print the token as string, decode it with the Tokenizer object
 		char* piece = bpe_decode(m, token, next);
@@ -2058,7 +2156,6 @@ static void read_stdin(const char* guide, char* buffer, size_t bufsize)
 		}
 	}
 }
-
 void chat(cats_ggml_model *m, char *cli_user_prompt, char *cli_system_prompt, int steps, real temperature, real topp)
 {
 	ProbIndex *probindex = calloc(m->n_vocab, sizeof(ProbIndex));
@@ -2671,7 +2768,11 @@ static int cats_gguf_load(char *name, cats_ggml_model *m)
 						m->vocab[n] = (char*)malloc(2);
 						m->vocab[n][0] = byte_val;
 						m->vocab[n][1] = 0;
-					} else {
+					} /*else if (!strcmp(buff, "▁") || !strcmp(buff, "▁")) { // space
+						m->vocab[n] = (char*)malloc(2);
+						m->vocab[n][0] = ' ';
+						m->vocab[n][1] = 0;
+					}*/ else {
 						m->vocab[n] = (char*)malloc(len+1);
 						strcpy(m->vocab[n], buff);
 					}
@@ -2705,7 +2806,13 @@ static int cats_gguf_load(char *name, cats_ggml_model *m)
 			break;
 		default:
 			read(fd, &kv[i].value, gguf_value_size[kv[i].type]);
-			printf("value: %d\n", kv[i].value.uint32);
+			switch (kv[i].type) {
+			case GGUF_TYPE_FLOAT32:
+				printf("value: %f\n", kv[i].value.float32);
+				break;
+			default:
+				printf("value: %d\n", kv[i].value.uint32);
+			}
 
 			if (!strcmp(kv[i].key, "llama.context_length")) m->seq_len = kv[i].value.uint32;
 			else if (!strcmp(kv[i].key, "llama.embedding_length")) m->n_embd = kv[i].value.uint32;
@@ -2719,6 +2826,7 @@ static int cats_gguf_load(char *name, cats_ggml_model *m)
 	}
 	if (m->n_layer > CATS_LLAMA_LAYER) printf("error: block_count(%d) over!", m->n_layer);
 
+	size_t size = 0;
 	cats_tensor* tensor = m->tensor;
 	for (uint64_t i=0; i<header.n_tensors; i++) {
 		uint64_t len;
@@ -2748,28 +2856,21 @@ static int cats_gguf_load(char *name, cats_ggml_model *m)
 			break;
 //		case GGML_TYPE_Q4_K: // 12
 		case GGML_TYPE_Q6_K: // 14
-			tensor[i].size = (tensor[i].size * ((256/2)/*lo4bit*/+(256/4)/*hi2bit*/+(256/16)/*scale*/+2/*global scale*/)) / 256;
+			tensor[i].size = (tensor[i].size * 210) / 256;
 			break;
 		default:
 			printf("%d: Not support %d\n", i, tensor[i].type);
 		}
 
 		printf("%d: %ld %s(%d): %d [%d,%d]\n", i, tensor[i].offset, tensor[i].name, tensor[i].type, tensor[i].size, tensor[i].dim[0], tensor[i].dim[1]);
+		size += tensor[i].size;
 	}
+	printf("gguf tensor size: %6.2f MB (%ld bytes)\n", size/1024./1024., size);
 
-//	size_t alignment, offset, size;
-//	read(fd, &alignment, sizeof(size_t));
-//	read(fd, &offset, sizeof(size_t));
-//	read(fd, &size, sizeof(size_t));
-//	printf("alignment: %d\n", alignment);
-//	printf("offset: %ld\n", offset);
-//	printf("size: %x\n", size);
 	lseek(fd, (lseek(fd, 0, SEEK_CUR)+31)&-32, SEEK_SET); // general.alignment: 32
-
 	size_t off = lseek(fd, 0, SEEK_CUR);
 	for (int i=0; i<header.n_tensors; i++) {
 		lseek(fd, off +m->tensor[i].offset, SEEK_SET);
-//		printf("%d(%d)\n", i, m->tensor[i].type);
 
 		m->tensor[i].quantize = gguf_quantize[m->tensor[i].type];
 		m->tensor[i].matmul = gguf_matmul[m->tensor[i].type];

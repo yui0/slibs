@@ -36,7 +36,7 @@ int main(int argc, char *argv[])
 	char *checkpoint_path = "models/model.bin";
 	char *tokenizer_path = "models/tokenizer.bin";
 	char *prompt = NULL;		// prompt string
-	int steps = 256;		// max number of steps to run for, 0: use seq_len
+	int steps = 512;		// max number of steps to run for, 0: use seq_len
 	float temperature = 1.0;	// 0.0 = greedy deterministic. 1.0 = original. don't set higher
 	float topp = 0.9;		// top-p in nucleus sampling. 1.0 = off. 0.9 works well, but slower
 	char *mode = "generate";	// generate|chat
@@ -102,7 +102,7 @@ int main(int argc, char *argv[])
 			close(fd);
 		}
 	}
-	malloc_run_state(&m);
+	cats_ggml_malloc(&m);
 
 	printf("transformer dimension: %d\n", m.n_embd);
 	printf("ffn layers's dimension: %d\n", m.n_hidden);
@@ -126,28 +126,7 @@ int main(int argc, char *argv[])
 		error_usage(argv[0]);
 	}
 
-	// memory and file handles cleanup
-	free_run_state(&m);
-	for (int i=0; i<m.n_vocab; i++) {
-		free(m.vocab[i]);
-	}
-	free(m.vocab);
-	free(m.score);
-
-	free(m.token_embedding_table->data);
-	free(m.rms_final_weight->data);
-//	free(m.wcls->data);
-	for (int i=0; i<m.n_layer; i++) {
-		free(m.rms_att_weight[i]->data);
-		free(m.wq[i]->data);
-		free(m.wk[i]->data);
-		free(m.wv[i]->data);
-		free(m.wo[i]->data);
-		free(m.rms_ffn_weight[i]->data);
-		free(m.w1[i]->data);
-		free(m.w2[i]->data);
-		free(m.w3[i]->data);
-	}
+	cats_ggml_free(&m);
 
 	return 0;
 }
