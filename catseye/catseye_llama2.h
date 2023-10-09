@@ -148,7 +148,6 @@ static void quantize_q8(int8_t* p, real* x, int n)
 {
 	int nb = n>>5; // QK8: 32
 	do {
-//	for (int i=0; i<nb; i++) {
 		// Load elements into 4 AVX vectors
 		__m256 v0 = _mm256_load_ps(x);
 		__m256 v1 = _mm256_load_ps(x+8);
@@ -214,7 +213,6 @@ static void quantize_q8(int8_t* p, real* x, int n)
 		_mm_storeu_si128((__m128i *)(p + 16), ni4);
 		*(float*)(p + 32) = d;
 		p += 36;
-//	}
 	} while (--nb > 0);
 }
 #else
@@ -604,7 +602,7 @@ static void cats_ggml_malloc(cats_ggml_model* m)
 	// ensure all mallocs went fine
 	if (!m->x || !m->xb || !m->xb2 || !m->hb || !m->hb2 || !m->q
 		|| /*!m->k || !m->v ||*/ !m->att || !m->logits || !m->key_cache
-		|| !m->value_cache/* || !s->probindex*/) {
+		|| !m->value_cache) {
 		fprintf(stderr, "malloc_run_state: malloc failed!\n");
 		exit(1);
 	}
@@ -688,10 +686,10 @@ static inline void softmax(real* x, int size)
 		sum += x[i];
 	}
 	// normalize
-//	float inv_sum = 1.0 / sum;
+	real inv_sum = 1.0 / sum;
 	for (int i=0; i<size; i++) {
-		x[i] /= sum;
-//		x[i] *= inv_sum;
+//		x[i] /= sum;
+		x[i] *= inv_sum;
 	}
 }
 
@@ -2025,7 +2023,6 @@ void generate(cats_ggml_model *m, char *prompt, int steps, real temperature, rea
 				// apply softmax to the logits to get the probabilities for next token
 				softmax(logits, m->n_vocab);
 				// flip a (float) coin (this is our source of entropy for sampling)
-//				float coin = random_f32(&sampler->rng_state);
 				float coin = random_f32();
 				// we sample from this distribution to get the next token
 				if (topp <= 0 || topp >= 1) {
@@ -2038,8 +2035,8 @@ void generate(cats_ggml_model *m, char *prompt, int steps, real temperature, rea
 			}
 		}
 		// data-dependent terminating condition: the BOS (=1) token delimits sequences
-		if (next==1/*<s>*/) break;
-//		if (next==1/*<s>*/ || next==2/*</s>*/) break;
+//		if (next==1/*<s>*/) break;
+		if (next==1/*<s>*/ || next==2/*</s>*/) break;
 
 		// print the token as string, decode it with the Tokenizer object
 		char* piece = bpe_decode(m, token, next);

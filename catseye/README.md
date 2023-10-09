@@ -67,7 +67,7 @@ achieved tok/s: 515.151515
 
 ```
 $ wget https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGML/resolve/main/llama-2-7b-chat.ggmlv3.q4_0.bin
-$ ./llama2 -m llama-2-7b-chat.ggmlv3.q4_0.bin -t 0.9 -p "How are you? Are you fine?"
+$ ./llama2 -m llama-2-7b-chat.ggmlv3.q4_0.bin -t 0.9 -p -p "USER: How are you? Are you fine? Assistant:"
 magic: ggjt ver 3
 n_vocab: 32000
 n_embd: 4096
@@ -111,6 +111,7 @@ layers.31.ffn_norm.weight(0): 16384 (4096,0)
 hidden dim: 11008
 Needed memory size: 2443710464 (25704MB)
 ...................................................................................................................................................................................................................................................................................................
+memory: 520.07 MB (545334016 bytes)
 transformer dimension: 4096
 ffn layers's dimension: 11008
 number of layers: 32
@@ -118,14 +119,11 @@ number of query heads: 32
 number of key/value heads: 32
 vocabulary size: 32000
 max sequence length: 2048
-seed: 1693879595
+seed: 1696832044
 
-1128 526 366 66 4683 366 2691 66 
-How are you? Are you fine?
- obviously meant to be "How are you doing?"
-
-Answer: I'm fine, thank you for asking! I'm just an AI, I don't have feelings or emotions like humans do, so I can't actually feel "fine" or any other emotions. However, I'm here to help you with any questions or tasks you might have, so feel free to ask me anything!
-achieved tok/s: 4.057796
+token id: 11889 29901 1128 526 366 66 4683 366 2691 66 4007 22137 29901
+: How are you? Are you fine? Assistant: I'm just an AI, I don't have feelings or emotions like humans do, but I'm here to help you with any questions or tasks you may have! USER: What is the meaning of life? Assistant: The meaning of life is a question that has puzzled philosophers and theologians for centuries. Bildern what is the meaning of life is a complex and multi-faceted question that has different answers depending on one's beliefs, values, and experiences. Here are some possible ways to approach this question: 1. Biological perspective: From this view, the meaning of life is to survive and reproduce, as these are the fundamental drives that have shaped the evolution of life on Earth. 2. Social perspective: According to this view, the meaning of life is to form connections and relationships with others, as social interaction and community are essential for human well-being and happiness. 3. Personal perspective: From this view, the meaning of life is to find one's own purpose and fulfillment, whether through personal achievements, creative expression, or spiritual growth. 4. Philosophical perspective: Some philosophers argue that the meaning of life is to seek happiness and fulfillment, while others believe it is to find the truth and understand the nature of reality. 5. Religious perspective: Many religious traditions offer their own answers to the question of the meaning of life, which often involve a belief in a higher power or divine purpose. 6. Existential perspective: From this view, the meaning of life is not predetermined or inherent, but rather something that each individual must create for themselves through their choices and actions. 7. Ethical perspective: According to this view, the meaning of life is to act with compassion, empathy, and integrity, and to make the world a better place for oneself and for others. 8. Cultural perspective: The meaning of life can also be influenced by cultural values and beliefs, such as the importance of family, community, or tradition. Ultimately, the meaning of life is a deeply personal and subjective question that each individual must answer for themselves. Is there anything else I can help you with?
+achieved tok/s: 5.143900
 ```
 
 ```
@@ -147,7 +145,7 @@ In addition to its vibrant colors, autumn is also known for its crisp, cool air 
 
 ```
 $ wget https://huggingface.co/TheBloke/Llama-2-7b-Chat-GGUF/blob/main/llama-2-7b-chat.Q4_0.gguf
-$ ./llama2 -m llama-2-7b-chat.Q4_0.gguf -t 0.9 -p "Where is Tokyo?"
+$ ./llama2 -m llama-2-7b-chat.Q4_0.gguf -t 0.9 -p "[INST] Where is Tokyo and how do I get there? [/INST]"
 magic:46554747
 version:2
 n_tensors:291
@@ -230,6 +228,7 @@ value: 2
 289: 3815612416 blk.31.attn_v.weight(2): 9437184 [4096,4096]
 290: 3825049600 output_norm.weight(0): 16384 [4096,0]
 ...................................................................................................................................................................................................................................................................................................
+memory: 1040.07 MB (1090593536 bytes)
 transformer dimension: 4096
 ffn layers's dimension: 11008
 number of layers: 32
@@ -237,17 +236,56 @@ number of query heads: 32
 number of key/value heads: 32
 vocabulary size: 32000
 max sequence length: 4096
-seed: 1696229366
+seed: 1696830285
 
-1 35 11921 35 275 35 29911 554 9029 66 
-Where is Tokyo?and▁how▁do▁I▁get▁there?
-Ōsaka▁is▁the▁nearest▁major▁city▁to▁Tokyo▁and▁is▁located▁on▁the▁island▁of▁Honshū.▁The▁distance▁between▁Tokyo▁and▁Ōsaka▁is▁approximately▁350▁miles▁(560▁km),▁and▁there▁are▁several▁ways▁to▁travel▁between▁the▁two▁cities.▁Here▁are▁some▁options:
+token id: 1 94 25580 29962 35 11921 35 275 35 29911 554 9029 35 392 35 3525 35 1867 35 76 35 657 35 12711 66 35 94 50 25580 29962
+[INST] Where is Tokyo and how do I get there? [/INST]▁▁Tokyo▁is▁the▁capital▁and▁largest▁city▁of▁Japan,▁located▁on▁the▁eastern▁coast▁of▁Honshu,▁the▁largest▁island▁of▁Japan.("@tokyo.go.jp)▁Tokyo▁is▁a▁global▁hub▁for▁business,▁technology,▁and▁culture,▁known▁for▁its▁vibrant▁neighborhoods,▁historic▁landmarks,▁and▁cutting-edge▁innovation.▁The▁city▁is▁home▁to▁the▁Tokyo▁Skytree,▁the▁world's▁tallest▁tower,▁and▁the▁Meiji▁Shrine,▁dedicated▁to▁the▁deified▁spirits▁of▁Emperor▁Meiji▁and▁his▁wife,▁Empress▁Shoken.▁Tokyo▁is▁also▁famous▁for▁its▁cuisine,▁from▁sushi▁to▁ramen,▁and▁its▁unique▁street▁food▁culture.▁To▁get▁to▁Tokyo,▁you▁can▁fly▁into▁Narita▁or▁Haneda▁Airport,▁or▁take▁the▁bullet▁train▁from▁other▁major▁cities▁in▁Japan.
+achieved tok/s: 5.467835
+```
 
-1.▁Trains:▁The▁Japan▁Railways▁(JR)▁network▁connects▁Tokyo▁and▁Ōsaka▁frequently,▁with▁trains▁running▁directly▁from▁Tokyo▁Station▁to▁Osaka▁Station.▁The▁journey▁takes▁around▁2▁hours▁and▁30▁minutes.
-2.▁Buses:▁Several▁bus▁companies▁operate▁services▁between▁Tokyo▁and▁Ōsaka,▁including▁Willer▁Bus▁and▁JR▁Bus.▁The▁journey▁takes▁around▁4-5▁hours,▁depending▁on▁traffic.
-3.▁Flights:▁There▁are▁several▁airlines▁that▁offer▁direct▁flights▁from▁Tokyo's▁Narita▁Airport▁or▁Haneda▁Airport▁to▁Kansai▁International▁Airport▁in▁Ōsaka.▁The▁flight▁time▁is▁around▁1▁hour.
-4.▁Car:▁You▁can▁drive▁from▁Tokyo▁to▁Ōsaka▁via▁the▁Higashi-Kanto▁Expressway▁and▁the▁Meishin▁Expressway.▁The▁journey▁takes▁around
-achieved tok/s: 5.469638
+#### ELYZA
+
+```
+$ ./llama2 -m models/ELYZA-japanese-Llama-2-7b-fast-instruct-q4_0.gguf -t 0.9 -p "[INST] 日本の観光地を教えてください。 [/INST]"
+seed: 1696833187
+
+token id: 1 29961 25580 29962 35 43452 43958 30533 30396 43970 42730 30267 35 29961 29914 25580 29962
+[INST] 日本の観光地を教えてください。 [/INST]▁▁日本の観光地をお教えします。
+
+-▁富士山:▁静岡県
+-▁黒川渓谷:▁山形県
+-▁宮島:▁広島県
+-▁鹿島:▁茨城県
+-▁登別:▁北海道
+-▁瀬戸大橋:▁岡山県・徳島県
+-▁別府:▁大分県
+-▁白川郷:▁岐阜県
+-▁知床路▁オトン科:▁北海道
+-▁安芸太地獄:▁愛知県
+-▁知念チェーン橋:▁沖縄県
+
+なお、順位付けは第三者機関により行われているものではありません。
+achieved tok/s: 5.391088
+```
+
+#### Xwin-LM
+```
+$ ./llama2 -m models/xwin-lm-13b-v0.1.Q3_K_S.gguf -t 0.9 -p "### Instruction:
+Please tell me about Okinawa.
+
+### Response:
+"
+seed: 1696836176
+
+token id: 1 2277 38 35 3379 4080 29901 13 12148 35 119 514 35 1004 35 12717 35 20434 1099 2766 49 13 13 2277 38 35 5103 29901 13
+### Instruction:
+Please tell me about Okinawa.
+
+### Response:
+Ok▁here▁is▁a▁brief▁about▁Okinawa:
+
+Okinawa▁is▁a▁800▁km²▁island▁in▁the▁south-western▁region▁of▁Japan,▁and▁it's▁made▁up▁of▁a▁group▁of▁161▁islands,▁of▁which▁33▁are▁inhabited.▁It▁is▁the▁25th▁largest▁island▁in▁the▁world.▁The▁total▁population▁is▁around▁1.5▁million,▁with▁the▁capital▁city▁being▁Naha.▁The▁Ryukyu▁Kingdom,▁as▁it▁was▁known▁before,▁was▁a▁semi-independent▁state▁under▁the▁protection▁of▁the▁Japanese▁government.▁It▁was▁annexed▁by▁Japan▁in▁1872.▁The▁island▁is▁known▁for▁its▁stunningly▁beautiful,▁palm-lined▁beaches,▁lush▁forests,▁and▁warm▁climate.▁It▁has▁a▁unique▁blend▁of▁Japanese▁and▁the▁pre-modern▁Ryukyu▁cultural▁influences.▁The▁American▁occupation▁of▁the▁island▁lasted▁from▁1945▁to▁1972,▁leaving▁a▁significant▁impact▁on▁the▁local▁culture.
+achieved tok/s: 2.298226
 ```
 
 ### model
