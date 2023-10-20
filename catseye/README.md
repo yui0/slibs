@@ -27,6 +27,12 @@ Inference of LLM model in pure C.
 $ make
 ```
 
+#### emscripten
+
+```
+$ emcc -o llama2.html llama2.c --pre-js pre.js -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1 -sSTACK_SIZE=2000000
+```
+
 ### How to convert the model
 
 ```
@@ -61,6 +67,14 @@ While they were eating, a big dog came running towards them. The dog was very ha
 After that, they went to get ice cream. Lily's favorite flavor was chocolate, so her mommy bought her a big chocolate cone. As they were leaving the park, Lily accidentally dropped her cone and it broke into many pieces. She started to cry again.
 But then, something unexpected happened. The hairy dog came running towards Lily and licked her face. Lily stopped crying and laughed. She realized that even though her ice cream cone broke, she still had a great day with her family.
 achieved tok/s: 515.151515
+```
+
+```
+./llama2 -m models/TinyLlama-1.1B-Chat-v0.2-q4_0.gguf -t 0.9 -p "<|im_start|>user
+Examplain Mt. Fuji.<|im_end|>
+<|im_start|>assistant
+"
+
 ```
 
 #### Llama 2 (GGML)
@@ -246,26 +260,22 @@ achieved tok/s: 5.467835
 #### ELYZA
 
 ```
-$ ./llama2 -m models/ELYZA-japanese-Llama-2-7b-fast-instruct-q4_0.gguf -t 0.9 -p "[INST] 日本の観光地を教えてください。 [/INST]"
-seed: 1696833187
+$ ./llama2 -m models/ELYZA-japanese-Llama-2-7b-fast-instruct-q4_0.gguf -t 0.9 -p "[INST] 日本のおすすめの観光地を教えてください。 [/INST]"
+seed: 1696919955
 
-token id: 1 29961 25580 29962 35 43452 43958 30533 30396 43970 42730 30267 35 29961 29914 25580 29962
-[INST] 日本の観光地を教えてください。 [/INST]▁▁日本の観光地をお教えします。
+token id: 1 29961 25580 29962 35 43452 43612 30199 43958 30533 30396 43970 42730 30267 35 29961 29914 25580 29962
+[INST] 日本のおすすめの観光地を教えてください。 [/INST]▁▁日本は四季折々の美しい景観や文化、歴史的建築物など、多くの人々を魅了し引き込む観光スポットが数多くあります。おすすめの観光スポットを以下に紹介します。
 
--▁富士山:▁静岡県
--▁黒川渓谷:▁山形県
--▁宮島:▁広島県
--▁鹿島:▁茨城県
--▁登別:▁北海道
--▁瀬戸大橋:▁岡山県・徳島県
--▁別府:▁大分県
--▁白川郷:▁岐阜県
--▁知床路▁オトン科:▁北海道
--▁安芸太地獄:▁愛知県
--▁知念チェーン橋:▁沖縄県
+1.富士山:▁世界文化遺産に登録されている日本最高峰の山です。素晴らしい景観とともに多くの信仰を集めています。
 
-なお、順位付けは第三者機関により行われているものではありません。
-achieved tok/s: 5.391088
+2.北海道:▁北海道は自然の景観が美しく、おおらかなスピリットを体感できる観光スポットが数多くあります。
+
+3.京都:▁日本の歴史や文化に触れられる観光スポットが数多くあり、多くの観光客が訪れます。
+
+4.宮島:▁宮島は日本最初の世界文化遺産に登録された場所です。大小さまざまな神社や仏閣があり、自然の景観も見事です。
+
+5.沖縄:▁日本だけでなく世界中から観光客が訪れる人気の観光スポットです。美しいビーチや島々、ユニークな文化が楽しめます。
+achieved tok/s: 5.354976
 ```
 
 #### Xwin-LM

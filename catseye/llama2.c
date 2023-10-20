@@ -33,7 +33,7 @@ int main(int argc, char *argv[])
 {
 	// default parameters
 	char *model = NULL;
-	char *checkpoint_path = "models/model.bin";
+	char *checkpoint_path = "models/stories42M.bin";
 	char *tokenizer_path = "models/tokenizer.bin";
 	char *prompt = NULL;		// prompt string
 	int steps = 512;		// max number of steps to run for, 0: use seq_len
@@ -111,7 +111,7 @@ int main(int argc, char *argv[])
 	printf("number of key/value heads: %d\n", m.n_kv_head);
 	printf("vocabulary size: %d\n", m.n_vocab);
 	printf("max sequence length: %d\n", m.seq_len);
-	printf("seed: %d\n\n", rng_seed);
+	printf("seed: %llu\n\n", rng_seed);
 
 	// right now we cannot run for more than seq_len steps
 	if (steps <= 0 || steps > m.seq_len) steps = m.seq_len;

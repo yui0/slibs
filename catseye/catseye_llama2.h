@@ -382,6 +382,7 @@ static inline void* dequantize_q3_K(void * restrict _y, const void * restrict x,
 			q += 32;
 		}
 	}
+	return 0;
 }
 static inline void* dequantize_q6_K(void * restrict _y, const void * restrict x, size_t k)
 {
@@ -465,19 +466,19 @@ static inline void* dequantize_q4_0(void * restrict y, const void * restrict x, 
 }
 static void* _dequantize_q3_K(void * restrict a, const void * restrict b, int n, int k)
 {
-	dequantize_q3_K(a, b +n*k/256*110, k);
+	return dequantize_q3_K(a, b +n*k/256*110, k);
 }
 static void* _dequantize_q6_K(void * restrict a, const void * restrict b, int n, int k)
 {
-	dequantize_q6_K(a, b +n*k/256*(256/2 +256/4 +256/16 +2), k);
+	return dequantize_q6_K(a, b +n*k/256*(256/2 +256/4 +256/16 +2), k);
 }
 static void* _dequantize_q4_0(void * restrict a, const void * restrict b, int n, int k)
 {
-	dequantize_q4_0(a, b +n*(k/32*18), k);
+	return dequantize_q4_0(a, b +n*(k/32*18), k);
 }
 static void* _dequantize_memcpy(void * restrict a, const void * restrict b, int n, int k)
 {
-	memcpy(a, b +n*k*sizeof(real), k*sizeof(real));
+	return memcpy(a, b +n*k*sizeof(real), k*sizeof(real));
 }
 
 //---------------------------------------------------------
@@ -885,7 +886,7 @@ static inline float dot_avx_q4_0(uint8_t* __restrict a, real* __restrict b, int 
 	}
 	return hsum_float_8(acc);
 }
-
+#else
 static inline real dot_q4_0_q8(uint8_t* __restrict a, int8_t* __restrict b, int n)
 {
 	int nn = n>>5; // 32
@@ -1026,84 +1027,8 @@ static inline real dot_q4_0(uint8_t* __restrict a, real* __restrict b, int n)
 	}
 	return val;
 }
-static inline float sdot_avx(const real* __restrict a, const real* __restrict b, int n)
-{
-	int i;
-	int nn = n&~(16-1);
-	__m256 acc = _mm256_setzero_ps();
-	for (i=0; i<nn; i+=16) {
-		__m256 x0 = _mm256_load_ps(a+i);
-		__m256 x1 = _mm256_load_ps(a+i+8);
-		__m256 y0 = _mm256_load_ps(b+i);
-		__m256 y1 = _mm256_load_ps(b+i+8);
-		acc = _mm256_add_ps(acc, _mm256_mul_ps(x0, y0));
-		acc = _mm256_add_ps(acc, _mm256_mul_ps(x1, y1));
-	}
-	float val = hsum_float_8(acc);
-	for (; i<n; ++i) val += a[i] * b[i];
-	return val;
-}
-static inline real dot_q3_K_q8_K(uint8_t* __restrict x, int8_t* __restrict y, int n)
-{
-	const uint32_t kmask1 = 0x03030303;
-	const uint32_t kmask2 = 0x0f0f0f0f;
-	const int nb = n / 256;
-	int8_t  aux8[256];
-	int16_t aux16[8];
-	float   sums [8];
-	int32_t aux32[8];
-	memset(sums, 0, 8*sizeof(float));
-
-	uint32_t auxs[4];
-	const int8_t * scales = (const int8_t*)auxs;
-
-	float sumf = 0;
-	for (int i=0; i<nb; ++i) {
-		uint8_t *p = (uint8_t*)(x + i*(256/8 +256/4 +12 +2));
-		const uint8_t * restrict q3 = p +256/8;
-		const uint8_t * restrict hm = p;
-		memset(aux32, 0, 8*sizeof(int32_t));
-		int8_t * restrict a = aux8;
-		uint8_t m = 1;
-		for (int j=0; j<256; j+=128) {
-			for (int l=0; l<32; ++l) a[l] = q3[l] & 3;
-			for (int l=0; l<32; ++l) a[l] -= (hm[l] & m ? 0 : 4);
-			a += 32; m <<= 1;
-			for (int l=0; l<32; ++l) a[l] = (q3[l] >> 2) & 3;
-			for (int l=0; l<32; ++l) a[l] -= (hm[l] & m ? 0 : 4);
-			a += 32; m <<= 1;
-			for (int l=0; l<32; ++l) a[l] = (q3[l] >> 4) & 3;
-			for (int l=0; l<32; ++l) a[l] -= (hm[l] & m ? 0 : 4);
-			a += 32; m <<= 1;
-			for (int l=0; l<32; ++l) a[l] = (q3[l] >> 6) & 3;
-			for (int l=0; l<32; ++l) a[l] -= (hm[l] & m ? 0 : 4);
-			a += 32; m <<= 1;
-			q3 += 32;
-		}
-		a = aux8;
-
-		const int8_t * restrict sc = p +256/8 +256/4;
-		memcpy(auxs, sc, 12);
-		uint32_t tmp = auxs[2];
-		auxs[2] = ((auxs[0] >> 4) & kmask2) | (((tmp >> 4) & kmask1) << 4);
-		auxs[3] = ((auxs[1] >> 4) & kmask2) | (((tmp >> 6) & kmask1) << 4);
-		auxs[0] = (auxs[0] & kmask2) | (((tmp >> 0) & kmask1) << 4);
-		auxs[1] = (auxs[1] & kmask2) | (((tmp >> 2) & kmask1) << 4);
-		const int8_t * restrict q8 = y +i*(4+256);
-		for (int j=0; j<256/16; ++j) {
-			for (int l=0; l<8; ++l) aux16[l] = q8[l] * a[l];
-			for (int l=0; l<8; ++l) aux32[l] += (scales[j] - 32) * aux16[l];
-			q8 += 8; a += 8;
-			for (int l=0; l<8; ++l) aux16[l] = q8[l] * a[l];
-			for (int l=0; l<8; ++l) aux32[l] += (scales[j] - 32) * aux16[l];
-			q8 += 8; a += 8;
-		}
-		const float d = cats_fp16_to_fp32(*((uint16_t*)(p +256/8 +256/4 +12))) * (*(float*)q8);
-		for (int l=0; l<8; ++l) sums[l] += d * aux32[l];
-	}
-	for (int l=0; l<8; ++l) sumf += sums[l];
-	return sumf;
-}
+#endif
+#ifdef __AVX__
 static inline real dot_q3_K_q8_K_avx(uint8_t* __restrict x, int8_t* __restrict y, int n)
 {
 	const int nb = n>>8; // 256
@@ -1245,6 +1170,69 @@ static inline real dot_q3_K_q8_K_avx(uint8_t* __restrict x, int8_t* __restrict y
 	}
 	return hsum_float_8(acc);
 }
+#else
+static inline real dot_q3_K_q8_K(uint8_t* __restrict x, int8_t* __restrict y, int n)
+{
+	const uint32_t kmask1 = 0x03030303;
+	const uint32_t kmask2 = 0x0f0f0f0f;
+	const int nb = n / 256;
+	int8_t  aux8[256];
+	int16_t aux16[8];
+	float   sums [8];
+	int32_t aux32[8];
+	memset(sums, 0, 8*sizeof(float));
+
+	uint32_t auxs[4];
+	const int8_t * scales = (const int8_t*)auxs;
+
+	float sumf = 0;
+	for (int i=0; i<nb; ++i) {
+		uint8_t *p = (uint8_t*)(x + i*(256/8 +256/4 +12 +2));
+		const uint8_t * restrict q3 = p +256/8;
+		const uint8_t * restrict hm = p;
+		memset(aux32, 0, 8*sizeof(int32_t));
+		int8_t * restrict a = aux8;
+		uint8_t m = 1;
+		for (int j=0; j<256; j+=128) {
+			for (int l=0; l<32; ++l) a[l] = q3[l] & 3;
+			for (int l=0; l<32; ++l) a[l] -= (hm[l] & m ? 0 : 4);
+			a += 32; m <<= 1;
+			for (int l=0; l<32; ++l) a[l] = (q3[l] >> 2) & 3;
+			for (int l=0; l<32; ++l) a[l] -= (hm[l] & m ? 0 : 4);
+			a += 32; m <<= 1;
+			for (int l=0; l<32; ++l) a[l] = (q3[l] >> 4) & 3;
+			for (int l=0; l<32; ++l) a[l] -= (hm[l] & m ? 0 : 4);
+			a += 32; m <<= 1;
+			for (int l=0; l<32; ++l) a[l] = (q3[l] >> 6) & 3;
+			for (int l=0; l<32; ++l) a[l] -= (hm[l] & m ? 0 : 4);
+			a += 32; m <<= 1;
+			q3 += 32;
+		}
+		a = aux8;
+
+		const int8_t * restrict sc = p +256/8 +256/4;
+		memcpy(auxs, sc, 12);
+		uint32_t tmp = auxs[2];
+		auxs[2] = ((auxs[0] >> 4) & kmask2) | (((tmp >> 4) & kmask1) << 4);
+		auxs[3] = ((auxs[1] >> 4) & kmask2) | (((tmp >> 6) & kmask1) << 4);
+		auxs[0] = (auxs[0] & kmask2) | (((tmp >> 0) & kmask1) << 4);
+		auxs[1] = (auxs[1] & kmask2) | (((tmp >> 2) & kmask1) << 4);
+		const int8_t * restrict q8 = y +i*(4+256);
+		for (int j=0; j<256/16; ++j) {
+			for (int l=0; l<8; ++l) aux16[l] = q8[l] * a[l];
+			for (int l=0; l<8; ++l) aux32[l] += (scales[j] - 32) * aux16[l];
+			q8 += 8; a += 8;
+			for (int l=0; l<8; ++l) aux16[l] = q8[l] * a[l];
+			for (int l=0; l<8; ++l) aux32[l] += (scales[j] - 32) * aux16[l];
+			q8 += 8; a += 8;
+		}
+		const float d = cats_fp16_to_fp32(*((uint16_t*)(p +256/8 +256/4 +12))) * (*(float*)q8);
+		for (int l=0; l<8; ++l) sums[l] += d * aux32[l];
+	}
+	for (int l=0; l<8; ++l) sumf += sums[l];
+	return sumf;
+}
+#endif
 /*static inline real dot_q4_K_q8_K(uint8_t *x, int8_t *y, int n)
 {
 	const int nb = n / 256;
@@ -1315,51 +1303,7 @@ static inline real dot_q3_K_q8_K_avx(uint8_t* __restrict x, int8_t* __restrict y
 	for (int l=0; l<8; ++l) sumf += sums[l];
 	return sumf;
 }*/
-static inline real dot_q6_K_q8_K(uint8_t* __restrict x, int8_t* __restrict y, int n)
-{
-	const int nb = n / 256;
-	int8_t  aux8[256];
-	int16_t aux16[8];
-	float   sums [8] = {0};
-	int32_t aux32[8];
-//	memset(sums, 0, 8*sizeof(float));
-
-	float sumf = 0;
-	for (int i=0; i<nb; ++i) {
-		uint8_t *p = (uint8_t*)(x + i*(256/2 +256/4 +256/16 +2));
-		const uint8_t * restrict q4 = p;
-		const uint8_t * restrict qh = p +256/2;
-		memset(aux32, 0, 8*sizeof(int32_t));
-		int8_t * restrict a = aux8;
-		for (int j=0; j<256; j+=128) {
-			for (int l=0; l<32; ++l) {
-				a[l +  0] = (int8_t)((q4[l +  0] & 0xF) | (((qh[l] >> 0) & 3) << 4)) - 32;
-				a[l + 32] = (int8_t)((q4[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)) - 32;
-				a[l + 64] = (int8_t)((q4[l +  0] >>  4) | (((qh[l] >> 4) & 3) << 4)) - 32;
-				a[l + 96] = (int8_t)((q4[l + 32] >>  4) | (((qh[l] >> 6) & 3) << 4)) - 32;
-			}
-			a  += 128;
-			q4 += 64;
-			qh += 32;
-		}
-		a = aux8;
-		const int8_t * restrict sc = p +256/2 +256/4;
-		const int8_t * restrict q8 = y +i*(4+256);
-		for (int j=0; j<256/16; ++j) {
-			for (int l=0; l<8; ++l) aux16[l] = q8[l] * a[l];
-			for (int l=0; l<8; ++l) aux32[l] += (*sc) * aux16[l];
-			q8 += 8; a += 8;
-			for (int l=0; l<8; ++l) aux16[l] = q8[l] * a[l];
-			for (int l=0; l<8; ++l) aux32[l] += (*sc) * aux16[l];
-			q8 += 8; a += 8;
-			sc++;
-		}
-		const float d = cats_fp16_to_fp32(*((uint16_t*)(p +256/2 +256/4 +256/16))) * (*(float*)q8);
-		for (int l=0; l<8; ++l) sums[l] += d * aux32[l];
-	}
-	for (int l=0; l<8; ++l) sumf += sums[l];
-	return sumf;
-}
+#ifdef __AVX__
 static inline real dot_q6_K_q8_K_avx(uint8_t* __restrict x, int8_t* __restrict y, int n)
 {
 	const int nb = n>>8; // 256
@@ -1476,23 +1420,110 @@ static inline real dot_q6_K_q8_K_avx(uint8_t* __restrict x, int8_t* __restrict y
 	}
 	return hsum_float_8(acc);
 }
+static inline float sdot_avx(const real* __restrict a, const real* __restrict b, int n)
+{
+	int i;
+	int nn = n&~(16-1);
+	__m256 acc = _mm256_setzero_ps();
+	for (i=0; i<nn; i+=16) {
+		__m256 x0 = _mm256_load_ps(a+i);
+		__m256 x1 = _mm256_load_ps(a+i+8);
+		__m256 y0 = _mm256_load_ps(b+i);
+		__m256 y1 = _mm256_load_ps(b+i+8);
+		acc = _mm256_add_ps(acc, _mm256_mul_ps(x0, y0));
+		acc = _mm256_add_ps(acc, _mm256_mul_ps(x1, y1));
+	}
+	float val = hsum_float_8(acc);
+	for (; i<n; ++i) val += a[i] * b[i];
+	return val;
+}
+#else
+static inline real dot_q6_K_q8_K(uint8_t* __restrict x, int8_t* __restrict y, int n)
+{
+	const int nb = n / 256;
+	int8_t  aux8[256];
+	int16_t aux16[8];
+	float   sums [8] = {0};
+	int32_t aux32[8];
+//	memset(sums, 0, 8*sizeof(float));
+
+	float sumf = 0;
+	for (int i=0; i<nb; ++i) {
+		uint8_t *p = (uint8_t*)(x + i*(256/2 +256/4 +256/16 +2));
+		const uint8_t * restrict q4 = p;
+		const uint8_t * restrict qh = p +256/2;
+		memset(aux32, 0, 8*sizeof(int32_t));
+		int8_t * restrict a = aux8;
+		for (int j=0; j<256; j+=128) {
+			for (int l=0; l<32; ++l) {
+				a[l +  0] = (int8_t)((q4[l +  0] & 0xF) | (((qh[l] >> 0) & 3) << 4)) - 32;
+				a[l + 32] = (int8_t)((q4[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)) - 32;
+				a[l + 64] = (int8_t)((q4[l +  0] >>  4) | (((qh[l] >> 4) & 3) << 4)) - 32;
+				a[l + 96] = (int8_t)((q4[l + 32] >>  4) | (((qh[l] >> 6) & 3) << 4)) - 32;
+			}
+			a  += 128;
+			q4 += 64;
+			qh += 32;
+		}
+		a = aux8;
+		const int8_t * restrict sc = p +256/2 +256/4;
+		const int8_t * restrict q8 = y +i*(4+256);
+		for (int j=0; j<256/16; ++j) {
+			for (int l=0; l<8; ++l) aux16[l] = q8[l] * a[l];
+			for (int l=0; l<8; ++l) aux32[l] += (*sc) * aux16[l];
+			q8 += 8; a += 8;
+			for (int l=0; l<8; ++l) aux16[l] = q8[l] * a[l];
+			for (int l=0; l<8; ++l) aux32[l] += (*sc) * aux16[l];
+			q8 += 8; a += 8;
+			sc++;
+		}
+		const float d = cats_fp16_to_fp32(*((uint16_t*)(p +256/2 +256/4 +256/16))) * (*(float*)q8);
+		for (int l=0; l<8; ++l) sums[l] += d * aux32[l];
+	}
+	for (int l=0; l<8; ++l) sumf += sums[l];
+	return sumf;
+}
+#endif
 #define MATMUL_FUNC(name, dotfunc, wtype, xtype, len) \
 static void name(real* __restrict xout, void* __restrict x, void* __restrict w, int n, int d) \
 { \
-	omp_set_num_threads(8); \
+	/*omp_set_num_threads(8);*/ \
 	_Pragma("omp parallel for") \
 	for (int i=0; i<(d); i++) { \
 		xout[i] = dotfunc(((wtype*)w)+len, (xtype*)x, (n)); \
 	} \
 }
-MATMUL_FUNC(matmul_avx, sdot_avx, real, real, i*n); // 580
-MATMUL_FUNC(matmul_q4_0_avx, dot_avx_q4_0, uint8_t, real, i*n/32*18); // 2.9
-MATMUL_FUNC(matmul_q4_0_q8, dot_q4_0_q8, uint8_t, int8_t, i*n/32*18); // 1.0
-MATMUL_FUNC(matmul_q4_0_q8_avx, dot_q4_0_q8_avx, uint8_t, int8_t, i*n/32*18); // 5.5
-//MATMUL_FUNC(matmul_q3_K_q8_K, dot_q3_K_q8_K, uint8_t, int8_t, i*n/256*110); // 0.95
+#ifdef __AVX__
+MATMUL_FUNC(matmul_f32, sdot_avx, real, real, i*n); // 580
+MATMUL_FUNC(matmul_q4_0, dot_avx_q4_0, uint8_t, real, i*n/32*18); // 2.9
+MATMUL_FUNC(matmul_q4_0_q8, dot_q4_0_q8_avx, uint8_t, int8_t, i*n/32*18); // 5.5
 MATMUL_FUNC(matmul_q3_K_q8_K, dot_q3_K_q8_K_avx, uint8_t, int8_t, i*n/256*110); // 4.5
-//MATMUL_FUNC(matmul_q6_K_q8_K, dot_q6_K_q8_K, uint8_t, int8_t, i*n/256*210); // 4.9 (case of only 1 use)
 MATMUL_FUNC(matmul_q6_K_q8_K, dot_q6_K_q8_K_avx, uint8_t, int8_t, i*n/256*210); // 5.4
+#else
+static void matmul_f32(real* __restrict xout, void* __restrict _x, void* __restrict _w, int n, int d)
+{
+	// W (d,n) @ x (n,) -> xout (d,)
+	// by far the most amount of time is spent inside this little function
+	real* __restrict x = _x;
+	real* __restrict w = _w;
+	#pragma omp parallel for
+	for (int i=0; i<d; i++) { // 338
+		real val = 0.0;
+		const int i_n = i * n;
+		for (int j=0; j<n; j+=4) {
+			val += w[i_n+j  ] * x[j];
+			val += w[i_n+j+1] * x[j+1];
+			val += w[i_n+j+2] * x[j+2];
+			val += w[i_n+j+3] * x[j+3];
+		}
+		xout[i] = val;
+	}
+}
+//MATMUL_FUNC(matmul_f32, matmul_naive, real, real, i*n);
+MATMUL_FUNC(matmul_q4_0_q8, dot_q4_0_q8, uint8_t, int8_t, i*n/32*18); // 1.0
+MATMUL_FUNC(matmul_q3_K_q8_K, dot_q3_K_q8_K, uint8_t, int8_t, i*n/256*110); // 0.95
+MATMUL_FUNC(matmul_q6_K_q8_K, dot_q6_K_q8_K, uint8_t, int8_t, i*n/256*210); // 4.9 (case of only 1 use)
+#endif
 /*static void matmul_arm(float *xout, float *x, float *w, int n, int d)
 {
 	int i;
@@ -1507,25 +1538,6 @@ MATMUL_FUNC(matmul_q6_K_q8_K, dot_q6_K_q8_K_avx, uint8_t, int8_t, i*n/256*210); 
 		xout[i] = vaddvq_f32(val);
 	}
 }*/
-#else
-static void matmul_naive(real* xout, real* x, real* w, int n, int d)
-{
-	// W (d,n) @ x (n,) -> xout (d,)
-	// by far the most amount of time is spent inside this little function
-	#pragma omp parallel for
-	for (int i=0; i<d; i++) { // 338
-		real val = 0.0;
-		const int i_n = i * n;
-		for (int j=0; j<n; j+=4) {
-			val += w[i_n+j  ] * x[j];
-			val += w[i_n+j+1] * x[j+1];
-			val += w[i_n+j+2] * x[j+2];
-			val += w[i_n+j+3] * x[j+3];
-		}
-		xout[i] = val;
-	}
-}
-#endif
 
 static void rope_falcon(real *q, real *k, int dim, int kv_dim, int head_size, int pos)
 {
@@ -1640,16 +1652,19 @@ static real* cats_llama2_transformer(int token, int pos, cats_ggml_model* m)
 			real* q = m->q + h * head_size; // get the query vector for this head
 			real* att = m->att + h * m->seq_len; // attention scores for this head
 			// iterate over all timesteps, including the current one
-//			int ts = pos>100 ? pos-100 : 0;
-			for (int t=0/*ts*/; t<=pos; t++) { // Mask?
+//			int ts = pos>1020 ? pos-1020 : 0;
+			for (int t=0/*ts*/; t<=pos; t++) {
 				// get the key vector for this head and at this timestep
 				real* k = m->key_cache + loff + t * kv_dim + (h / kv_mul) * head_size;
 				// calculate the attention score as the dot product of q and k
-				/*real score = 0.0;
+#ifdef __AVX__
+				real score = sdot_avx(q, k, head_size);
+#else
+				real score = 0.0;
 				for (int i=0; i<head_size; i++) {
 					score += q[i] * k[i];
-				}*/
-				real score = sdot_avx(q, k, head_size);
+				}
+#endif
 				score /= sqrtf(head_size);
 //				score *= sqrt_head_size;
 				// save the score to the attention buffer
@@ -1662,8 +1677,7 @@ static real* cats_llama2_transformer(int token, int pos, cats_ggml_model* m)
 			// weighted sum of the values, store back into xb
 			real* xb = m->xb + h * head_size;
 			memset(xb, 0, head_size * sizeof(real));
-//			int ts = pos>10 ? pos-10 : 0;
-			for (int t=0/*ts*/; t<=pos; t++) { // Mask?
+			for (int t=0/*ts*/; t<=pos; t++) {
 				// get the value vector for this head and at this timestep
 //				real* v = s->value_cache + loff + t * dim + h * head_size;
 				real* v = m->value_cache + loff + t * kv_dim + (h / kv_mul) * head_size;
@@ -2321,24 +2335,24 @@ static void dequantize_file(int fd, cats_tensor *t, int f)
 {
 	if (f) {
 		t->quantize = quantize_q8;
-		t->matmul = matmul_q4_0_q8_avx;
+		t->matmul = matmul_q4_0_q8;
 		read(fd, t->data, t->size);
 		return;
 	}
 
 	// unzip to f32
-	t->matmul = matmul_avx;
+	t->matmul = matmul_f32;
 	switch (t->type) {
 //	case LLAMA_FTYPE_MOSTLY_F16:
 	case LLAMA_FTYPE_ALL_F32:
 		read(fd, t->data, t->size);
 		break;
 	case LLAMA_FTYPE_MOSTLY_Q4_0:
-		uint8_t *d = malloc(t->size);
+		{uint8_t *d = malloc(t->size);
 		read(fd, d, t->size);
 		dequantize_q4_0(t->data, d, (t->size/18)*32);
 		free(d);
-		break;
+		break;}
 	default:
 		printf("Not support: %d\n", t->type);
 	}
@@ -2460,7 +2474,7 @@ static int cats_ggml_load(char *name, cats_ggml_model *m)
 		for (int i=0; i<shape_len; i++) m->tensor[n].dim[i] = shape[i];
 		m->tensor[n].size = size;
 		m->tensor[n].offset = lseek(fd, 0, SEEK_CUR);
-		printf("%s(%d): %d (%d,%d)\n", m->tensor[n].name, m->tensor[n].type, m->tensor[n].size, m->tensor[n].dim[0], m->tensor[n].dim[1]);
+		printf("%s(%d): %llu (%llu,%llu)\n", m->tensor[n].name, m->tensor[n].type, m->tensor[n].size, m->tensor[n].dim[0], m->tensor[n].dim[1]);
 //		if (!strcmp("layers.0.feed_forward.w1.weight", name)) hidden_dim = m->tensor[n].dim[1];
 		n++;
 
@@ -2489,7 +2503,7 @@ static int cats_ggml_load(char *name, cats_ggml_model *m)
 	total_size += (m->seq_len * head_size / 2);		// freq_cis_real
 	total_size += (m->seq_len * head_size / 2);		// freq_cis_imag
 	total_size += (m->n_vocab * m->n_embd);			// wcls: shared_weights: output.weight
-	printf("Needed memory size: %u (%uMB)\n", total_size, total_size/1024/1024*sizeof(float));
+	printf("Needed memory size: %llu (%lluMB)\n", total_size, total_size/1024/1024*sizeof(float));
 
 //	precompute_freqs_cis(head_size, model->seq_len, 10000.0, w->freq_cis_real, w->freq_cis_imag);
 
@@ -2580,7 +2594,7 @@ static int cats_ggml_load(char *name, cats_ggml_model *m)
 	// q4_0 * q8: 5.4 tokens/sec
 	dequantize = _dequantize_q4_0;
 	quantize = quantize_q8;
-	matmul = matmul_q4_0_q8_avx;
+	matmul = matmul_q4_0_q8;
 
 	close(fd);
 	return 0;
@@ -2614,16 +2628,16 @@ enum ggml_type {
 	GGML_TYPE_I32,
 	GGML_TYPE_COUNT,
 };
-void matmul_null(real* restrict, void* restrict, void* restrict, int, int)
+void matmul_null(real* restrict o, void* restrict x, void* restrict w, int n, int d)
 {
 }
 void (*gguf_matmul[])(real* restrict, void* restrict, void* restrict, int, int) = {
-	[GGML_TYPE_F32]  = matmul_avx,
-	[GGML_TYPE_Q4_0] = matmul_q4_0_q8_avx,
+	[GGML_TYPE_F32]  = matmul_f32,
+	[GGML_TYPE_Q4_0] = matmul_q4_0_q8,
 	[GGML_TYPE_Q3_K] = matmul_q3_K_q8_K,
 	[GGML_TYPE_Q6_K] = matmul_q6_K_q8_K,
 };
-void quantize_null(int8_t*, real*, int)
+void quantize_null(int8_t* p, real* x, int n)
 {
 }
 void (*gguf_quantize[])(int8_t*, real*, int) = {
@@ -2720,8 +2734,8 @@ static int cats_gguf_load(char *name, cats_ggml_model *m)
 	read(fd, &header, sizeof(header));
 	printf("magic:%x\n", header.magic);
 	printf("version:%d\n", header.version);
-	printf("n_tensors:%d\n", header.n_tensors);
-	printf("n_kv:%d\n", header.n_kv);
+	printf("n_tensors:%llu\n", header.n_tensors);
+	printf("n_kv:%llu\n", header.n_kv);
 
 	if (header.magic != 0x46554747) {
 		printf("Invalid GGUF file.\n");
@@ -2739,18 +2753,18 @@ static int cats_gguf_load(char *name, cats_ggml_model *m)
 		read(fd, kv[i].key, len);
 		read(fd, &kv[i].type, sizeof(uint32_t));
 		kv[i].key[len] = 0;
-		printf("key #%d: %s (%d)\n", i, kv[i].key, kv[i].type);
+		printf("key #%llu: %s (%u)\n", i, kv[i].key, kv[i].type);
 
 		switch (kv[i].type) {
 		case GGUF_TYPE_STRING:
 			read(fd, &len, sizeof(uint64_t));
 			read(fd, &kv[i].value, len);
-			printf("string: %s(%d)\n", kv[i].value.str, len);
+			printf("string: %s(%llu)\n", kv[i].value.str, len);
 			break;
 		case GGUF_TYPE_ARRAY:
 			read(fd, &kv[i].value.arr.type, sizeof(uint32_t));
 			read(fd, &kv[i].value.arr.n, sizeof(uint64_t));
-			printf("type: %d (%d)\n", kv[i].value.arr.type, kv[i].value.arr.n);
+			printf("type: %d (%llu)\n", kv[i].value.arr.type, kv[i].value.arr.n);
 
 			if (!strcmp(kv[i].key, "tokenizer.ggml.tokens")) {
 				m->n_vocab = kv[i].value.arr.n;
@@ -2856,10 +2870,10 @@ static int cats_gguf_load(char *name, cats_ggml_model *m)
 			tensor[i].size = (tensor[i].size * 210) / 256;
 			break;
 		default:
-			printf("%d: Not support %d\n", i, tensor[i].type);
+			printf("%llu: Not support %d\n", i, tensor[i].type);
 		}
 
-		printf("%d: %ld %s(%d): %d [%d,%d]\n", i, tensor[i].offset, tensor[i].name, tensor[i].type, tensor[i].size, tensor[i].dim[0], tensor[i].dim[1]);
+		printf("%llu: %ld %s(%d): %lld [%llu,%llu]\n", i, tensor[i].offset, tensor[i].name, tensor[i].type, tensor[i].size, tensor[i].dim[0], tensor[i].dim[1]);
 		size += tensor[i].size;
 	}
 	printf("gguf tensor size: %6.2f MB (%ld bytes)\n", size/1024./1024., size);
@@ -2921,9 +2935,10 @@ static int cats_gguf_load(char *name, cats_ggml_model *m)
 
 //	dequantize = _dequantize_q4_0;
 	quantize = quantize_q8;
-	matmul = matmul_q4_0_q8_avx;
+	matmul = matmul_q4_0_q8;
 
 	close(fd);
+	return 0;
 }
 
 //---------------------------------------------------------
@@ -3014,10 +3029,10 @@ static int cats_checkpoint_load(char *checkpoint, cats_ggml_model *m)
 	if (!shared_weights) read(fd, m->wcls->data, sizeof(real) * m->n_vocab * m->n_embd);
 
 	quantize = quantize_null;
-	matmul = matmul_avx;
+	matmul = matmul_f32;
 	for (int i=0; i<3+9*m->n_layer; i++) {
 		m->tensor[i].quantize = quantize_null;
-		m->tensor[i].matmul = matmul_avx;
+		m->tensor[i].matmul = matmul_f32;
 	}
 
 	return fd;
