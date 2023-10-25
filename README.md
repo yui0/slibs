@@ -41,6 +41,7 @@ Single file libraries for C/C++.
 |**[gpgpu_gl4.h](gpgpu_gl4.h)** | GPGPU | 170 | public domain | [OpenGL compute shader frameworks](https://github.com/yui0/waifu2x-glsl)
 |**[ocl.h](ocl.h)** | GPGPU | 190 | public domain | [OpenCL frameworks](https://github.com/yui0/waifu2x-ocl)
 | --------------------- | -------- | --- | --- | --------------------------------
+|**[alloc.h](alloc.h)** | utils | 116 | MIT | Safety alloc
 |**[clock.h](clock.h)** | <details><summary>utils</summary>[ref.](https://github.com/yui0/waifu2x-glsl)</details> | 31 | public domain | clock function for linux
 |**[ht.h](ht.h)** | utils | 330 | MIT | hash table
 |**[kbhit.h](kbhit.h)** | <details><summary>utils</summary>[ref.](https://github.com/yui0/aplay-)</details> | 64 | public domain | kbhit function for linux
