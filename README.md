@@ -37,7 +37,8 @@ Single file libraries for C/C++.
 |**[sgemm_ocl.h](sgemm_ocl.h)** | GPGPU/math | 662 | public domain | [Fast GEMM function for OpenCL](https://github.com/yui0/ugemm)
 |**[sgemm_gl.h](sgemm_gl.h)** | GPGPU/math | 110 | public domain | [Fast GEMM function for OpenGL4](https://github.com/yui0/ugemm)
 |**[gpgpu_glsl.h](gpgpu_glsl.h)** | GPGPU | 399 | public domain | [GLSL frameworks](https://github.com/yui0/waifu2x-glsl)
-|**[gpgpu_gles3.h](gpgpu_gles3.h)** | GPGPU | 264 | public domain | [GLES frameworks with TransformFeedback](https://github.com/yui0/waifu2x-glsl)
+|**[gpgpu_gles.h](gpgpu_gles.h)** | GPGPU | 443 | public domain | [GLES 3.0 frameworks]
+|**[gpgpu_gles3.h](gpgpu_gles3.h)** | GPGPU | 264 | public domain | [GLES 3.0 frameworks with TransformFeedback]
 |**[gpgpu_gl4.h](gpgpu_gl4.h)** | GPGPU | 170 | public domain | [OpenGL compute shader frameworks](https://github.com/yui0/waifu2x-glsl)
 |**[ocl.h](ocl.h)** | GPGPU | 190 | public domain | [OpenCL frameworks](https://github.com/yui0/waifu2x-ocl)
 | --------------------- | -------- | --- | --- | --------------------------------

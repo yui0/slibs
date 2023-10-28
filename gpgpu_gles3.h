@@ -89,7 +89,7 @@ GLuint gpu_load_shader(GLenum shaderType, const char* pSource)
 			//GLchar infoLog[logSize];
 			GLchar infoLog[8192];
 			glGetShaderInfoLog(shader, logSize, &length, infoLog);
-			debug("Compile Error in %s\n%s\n", str, infoLog);
+			debug("Compile Error in %s\n%s\n", src, infoLog);
 		}
 	}
 
