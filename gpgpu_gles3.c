@@ -1,13 +1,13 @@
-// clang -Os gpgpu_gles.c -o gpgpu_gles -lglfw -lGL
+// clang -Os gpgpu_gles3.c -o gpgpu_gles3 -lglfw -lGL
 #include <stdio.h>
 #include <stdlib.h>
-#include "gpgpu_gles.h"
+#include "gpgpu_gles3.h"
 
-const char *shader_out[] = { "res1" };
+const char *shader_out[] = { "res" };
 const char* shader_source = "#version 300 es\n" STRINGIFY(
-out float res1;
+out float res;
 void main() {
-  res1 = float(gl_VertexID);
+  res = float(gl_VertexID);
 }
 );
 
@@ -24,8 +24,8 @@ void compute()
 
 	GLuint vbo;
 	glGenBuffers(1, &vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(data), &data[0], GL_STREAM_DRAW);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, vbo);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(data), &data[0], GL_STREAM_DRAW);
 	GPU_CHECK();
 
 	// Create a transform feedback object:
@@ -48,18 +48,18 @@ void compute()
 	glUseProgram(0);
 
 	GLfloat *feedback;
-	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-	feedback = glMapBufferRange(GL_ARRAY_BUFFER, 0, num*sizeof(float), GL_MAP_READ_BIT);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, vbo);
+	feedback = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, num*sizeof(float), GL_MAP_READ_BIT);
 	printf("glMapBufferRange: ");
 	for (int i=0; i<num; i++) {
 		printf("%f ", feedback[i]);
 	}
 	printf("\n");
-	glUnmapBuffer(GL_ARRAY_BUFFER);
+	glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
 
 	printf("glGetBufferSubData: ");
-	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-	glGetBufferSubData(GL_ARRAY_BUFFER, 0, num * sizeof(float), data);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, vbo);
+	glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, num * sizeof(float), data);
 	GPU_CHECK();
 	for (int i=0; i<num; i++) {
 		printf("%f ", data[i]);

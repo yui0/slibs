@@ -5,6 +5,7 @@
 //---------------------------------------------------------
 
 #include <stdio.h>
+#include <string.h>
 #include <assert.h>
 
 #ifndef GL_GLEXT_PROTOTYPES
@@ -38,6 +39,14 @@
 
 //#define DEBUG
 #ifdef DEBUG
+void gpu_checkError(int line)
+{
+	GLenum err = glGetError();
+	if (err != GL_NO_ERROR) {
+		printf(__FILE__ ":%d glGetError returns %d\n", line, err);
+		exit(1);
+	}
+}
 #define GPU_CHECK() gpu_checkError(__LINE__);
 #define debug(fmt, ... ) \
 	fprintf(stderr, \
@@ -49,14 +58,6 @@
 #define GPU_CHECK()
 #define debug( fmt, ... ) ((void)0)
 #endif
-void gpu_checkError(int line)
-{
-	GLenum err = glGetError();
-	if (err != GL_NO_ERROR) {
-		printf(__FILE__ ":%d glGetError returns %d\n", line, err);
-		exit(1);
-	}
-}
 
 #define _STRGF(x)	# x
 #define STRINGIFY(x)	_STRGF(x)
@@ -65,29 +66,34 @@ const char* fragment_shader_source = "#version 300 es\nvoid main(){}";
 
 GLuint gpu_load_shader(GLenum shaderType, const char* pSource)
 {
-	GLuint shader = glCreateShader(shaderType);
-	if (shader) {
-		glShaderSource(shader, 1, &pSource, NULL);
-		glCompileShader(shader);
-		GLint compiled = 0;
-		glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
-		if (!compiled) {
-			GLint infoLen = 0;
-			glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &infoLen);
-			if (infoLen) {
-				char* buf = (char*)malloc(infoLen);
-				if (buf) {
-					glGetShaderInfoLog(shader, infoLen, NULL, buf);
-					printf("%s\n\nCould not compile shader %d:\n%s\n",
-					       pSource, shaderType, buf);
-					free(buf);
-					exit(1);
-				}
-				glDeleteShader(shader);
-				shader = 0;
-			}
+	char *src = strdup(pSource);
+	char *p = src;
+	while (*p) {
+		switch (*p++) {
+		case '{':
+		case ';':
+			if (*p==0x20) *p = '\n';
+//			if (*p==0x20 && *(p+1)!='i') *p = '\n';
 		}
 	}
+
+	GLuint shader = glCreateShader(shaderType);
+	glShaderSource(shader, 1, (const char**)&src, 0);
+	glCompileShader(shader);
+	GLint compiled;
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
+	if (!compiled) {
+		int logSize, length;
+		glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logSize);
+		if (logSize > 1) {
+			//GLchar infoLog[logSize];
+			GLchar infoLog[8192];
+			glGetShaderInfoLog(shader, logSize, &length, infoLog);
+			debug("Compile Error in %s\n%s\n", str, infoLog);
+		}
+	}
+
+	free(src);
 	return shader;
 }
 
@@ -132,6 +138,25 @@ GLuint gpgpu_compile(const char* src, const char *varyings[])
 	// setup variables
 	glUseProgram(program);
 	return program;
+}
+
+GLuint gpgpu_make_texture(int w, int h, float *texels)
+{
+	GLuint texture;
+	glGenTextures(1, &texture);
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, w, h, 0, GL_RGBA, GL_FLOAT, texels);
+
+	// clamp to edge to support non-power of two textures
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+	// don't interpolate when getting data from texture
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+	return texture;
 }
 
 #ifndef GPGPU_USE_GLES
