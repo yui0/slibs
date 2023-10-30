@@ -81,6 +81,7 @@ void gpu_checkError(int line)
 
 // vertex
 char pass_through[] = "#version 300 es\n" STRINGIFY(
+precision highp float;
 layout(location = 0) in vec4 pos;
 layout(location = 1) in vec2 tex;
 out vec2 uv;
@@ -201,16 +202,16 @@ GLuint coCreateDataTexture(int w, int h, void *texels, GLuint type, int flag)
 #endif
 
 #ifndef EMSCRIPTEN
-	GLuint clamp = GL_CLAMP_TO_EDGE;
+/*	GLuint clamp = GL_CLAMP_TO_EDGE;
 	if (flag & GPGPU_TEX_PADDING) clamp = GL_CLAMP_TO_BORDER;	// 0 padding
 	if (flag & GPGPU_TEX_REPEAT) clamp = GL_REPEAT;
 
 	// clamp to edge to support non-power of two textures
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, clamp);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, clamp);
-//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_WRAP); // x
-//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_NEAREST); // y
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, clamp);*/
 #endif
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 	// don't interpolate when getting data from texture
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -375,6 +376,12 @@ void coInit()
 	}
 #endif
 	printf("%s: OpenGL %s\n", glGetString(GL_RENDERER), glGetString(GL_VERSION));
+
+	int max_texture_width = 0;
+	glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_width);
+	max_texture_width /= 8;
+	int max_texture_size = max_texture_width * max_texture_width;
+	printf("max_texture_size: %d (%d)\n", max_texture_size, max_texture_width*8);
 }
 
 void coTerm()
