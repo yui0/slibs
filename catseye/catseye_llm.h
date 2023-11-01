@@ -29,6 +29,7 @@ typedef DTYPE	real; // _Float16
 #define real	float
 #endif
 
+#if 1
 #define ALIGN		256
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #define malloc(size)	_aligned_malloc(size, ALIGN)
@@ -39,6 +40,9 @@ typedef DTYPE	real; // _Float16
 #endif  /* _MSC_VER */
 //#define calloc(n, size)	({ uint64_t _s = n * size; void* _p = malloc(_s); memset(_p, 0, _s)!=0 ? _p : NULL; })
 #define calloc(n, size)	({ uint64_t _s = n * size; void* _p; posix_memalign((void**) &_p, ALIGN, (_s))==0 ? _p : NULL; })
+#else
+#include "alloc.h"
+#endif
 
 #undef MIN
 #undef MAX
@@ -355,7 +359,7 @@ static inline void* dequantize_q3_K(void * restrict _y, const void * restrict x,
 		const uint8_t * restrict hm = p;
 		uint8_t m = 1;
 
-		const int8_t  * restrict sc = p +256/8 +256/4;
+		const int8_t  * restrict sc = (const int8_t*)p +256/8 +256/4;
 		memcpy(aux, sc, 12);
 		uint32_t tmp = aux[2];
 		aux[2] = ((aux[0] >> 4) & kmask2) | (((tmp >> 4) & kmask1) << 4);
@@ -394,7 +398,7 @@ static inline void* dequantize_q6_K(void * restrict _y, const void * restrict x,
 
 		const uint8_t * restrict ql = p;
 		const uint8_t * restrict qh = p +256/2;
-		const int8_t  * restrict sc = p +256/2 +256/4;
+		const int8_t  * restrict sc = (const int8_t*)p +256/2 +256/4;
 
 		for (int n=0; n<2; n++) {
 			for (int l=0; l<32; ++l) {
@@ -580,11 +584,23 @@ typedef struct {
 	real *logits;		// output logits
 	real *key_cache;	// (layer, seq_len, dim)
 	real *value_cache;	// (layer, seq_len, dim)
-} cats_ggml_model;
+
+	// parameter
+	int steps;		// max number of steps to run for, 0: use seq_len
+	real temperature;	// 0.0 = greedy deterministic. 1.0 = original. don't set higher
+	real topk;		// top-k sampling
+	real topp;		// top-p in nucleus sampling. 1.0 = off. 0.9 works well
+	//
+	int* prompt_tokens;
+	int num_prompt_tokens;
+	int next;
+	int token;
+	int pos;
+} cats_llm_model;
 
 //---------------------------------------------------------
 
-static void cats_ggml_malloc(cats_ggml_model* m)
+static void cats_llm_malloc(cats_llm_model* m)
 {
 	// we calloc instead of malloc to keep valgrind happy
 	int kv_dim = (m->n_embd * m->n_kv_head) / m->n_head;
@@ -613,7 +629,7 @@ static void cats_ggml_malloc(cats_ggml_model* m)
         printf("memory: %6.2f MB (%ld bytes)\n", size/(1024.0*1024.0), size);
 }
 
-static void cats_ggml_free(cats_ggml_model* m)
+static void cats_llm_free(cats_llm_model* m)
 {
 	free(m->x);
 	free(m->xb);
@@ -746,9 +762,9 @@ static inline void sgemm7_(const int M, const int N, const int K, const float *A
 
 //			__attribute__((aligned(32))) real c[2] = {0};
 			for (; k<K; k++) {
-				real A0k = A[i*K+k];
-				real A1k = A[(i+1)*K+k];
-				real Bk0 = B[k*N+j];
+				float A0k = A[i*K+k];
+				float A1k = A[(i+1)*K+k];
+				float Bk0 = B[k*N+j];
 
 				c[0] += A0k * Bk0;
 				c[1] += A1k * Bk0;
@@ -1178,9 +1194,9 @@ static inline real dot_q3_K_q8_K(uint8_t* __restrict x, int8_t* __restrict y, in
 	const int nb = n / 256;
 	int8_t  aux8[256];
 	int16_t aux16[8];
-	float   sums [8];
+	float   sums [8] = {0};
 	int32_t aux32[8];
-	memset(sums, 0, 8*sizeof(float));
+	//memset(sums, 0, 8*sizeof(float));
 
 	uint32_t auxs[4];
 	const int8_t * scales = (const int8_t*)auxs;
@@ -1210,7 +1226,7 @@ static inline real dot_q3_K_q8_K(uint8_t* __restrict x, int8_t* __restrict y, in
 		}
 		a = aux8;
 
-		const int8_t * restrict sc = p +256/8 +256/4;
+		const int8_t * restrict sc = (const int8_t*)p +256/8 +256/4;
 		memcpy(auxs, sc, 12);
 		uint32_t tmp = auxs[2];
 		auxs[2] = ((auxs[0] >> 4) & kmask2) | (((tmp >> 4) & kmask1) << 4);
@@ -1420,7 +1436,7 @@ static inline real dot_q6_K_q8_K_avx(uint8_t* __restrict x, int8_t* __restrict y
 	}
 	return hsum_float_8(acc);
 }
-static inline float sdot_avx(const real* __restrict a, const real* __restrict b, int n)
+static inline float dot_avx(const real* __restrict a, const real* __restrict b, int n)
 {
 	int i;
 	int nn = n&~(16-1);
@@ -1466,7 +1482,7 @@ static inline real dot_q6_K_q8_K(uint8_t* __restrict x, int8_t* __restrict y, in
 			qh += 32;
 		}
 		a = aux8;
-		const int8_t * restrict sc = p +256/2 +256/4;
+		const int8_t * restrict sc = (const int8_t*)p +256/2 +256/4;
 		const int8_t * restrict q8 = y +i*(4+256);
 		for (int j=0; j<256/16; ++j) {
 			for (int l=0; l<8; ++l) aux16[l] = q8[l] * a[l];
@@ -1484,19 +1500,25 @@ static inline real dot_q6_K_q8_K(uint8_t* __restrict x, int8_t* __restrict y, in
 	return sumf;
 }
 #endif
+#if defined(__EMSCRIPTEN__) || defined(_WASI_EMULATED_MMAN)
+#define _omp_set_num_threads(n)
+#else
+void omp_set_num_threads(int);
+#define _omp_set_num_threads(n) omp_set_num_threads(n);
+#endif
 #define MATMUL_FUNC(name, dotfunc, wtype, xtype, len) \
 static void name(real* __restrict xout, void* __restrict x, void* __restrict w, int n, int d) \
 { \
-	/*omp_set_num_threads(8);*/ \
+	_omp_set_num_threads(6); \
 	_Pragma("omp parallel for") \
 	for (int i=0; i<(d); i++) { \
 		xout[i] = dotfunc(((wtype*)w)+len, (xtype*)x, (n)); \
 	} \
 }
 #ifdef __AVX__
-MATMUL_FUNC(matmul_f32, sdot_avx, real, real, i*n); // 580
+MATMUL_FUNC(matmul_f32, dot_avx, real, real, i*n); // 611
 MATMUL_FUNC(matmul_q4_0, dot_avx_q4_0, uint8_t, real, i*n/32*18); // 2.9
-MATMUL_FUNC(matmul_q4_0_q8, dot_q4_0_q8_avx, uint8_t, int8_t, i*n/32*18); // 5.5
+MATMUL_FUNC(matmul_q4_0_q8, dot_q4_0_q8_avx, uint8_t, int8_t, i*n/32*18); // 6.2
 MATMUL_FUNC(matmul_q3_K_q8_K, dot_q3_K_q8_K_avx, uint8_t, int8_t, i*n/256*110); // 4.5
 MATMUL_FUNC(matmul_q6_K_q8_K, dot_q6_K_q8_K_avx, uint8_t, int8_t, i*n/256*210); // 5.4
 #else
@@ -1590,7 +1612,7 @@ static void rope_llama(real *q, real *k, int dim, int kv_dim, int head_size, int
 // https://qiita.com/birdwatcher/items/b3e4428f63f708db37b7
 // https://github.com/RahulSChand/llama2.c-for-dummies
 // https://zenn.dev/skypenguins/articles/a7b4cfee63b67c
-static real* cats_llama2_transformer(int token, int pos, cats_ggml_model* m)
+static real* cats_llama2_transformer(int token, int pos, cats_llm_model* m)
 {
 	// a few convenience variables
 	real *x = m->x;
@@ -1658,7 +1680,7 @@ static real* cats_llama2_transformer(int token, int pos, cats_ggml_model* m)
 				real* k = m->key_cache + loff + t * kv_dim + (h / kv_mul) * head_size;
 				// calculate the attention score as the dot product of q and k
 #ifdef __AVX__
-				real score = sdot_avx(q, k, head_size);
+				real score = dot_avx(q, k, head_size);
 #else
 				real score = 0.0;
 				for (int i=0; i<head_size; i++) {
@@ -1759,7 +1781,7 @@ int str_lookup(char *str, TokenIndex *sorted_vocab, int vocab_size)
 	return res != NULL ? res->id : -1;
 }
 
-char* bpe_decode(cats_ggml_model* t, int prev_token, int token)
+char* bpe_decode(cats_llm_model* t, int prev_token, int token)
 {
 	char *piece = t->vocab[token];
 	// following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
@@ -1909,11 +1931,6 @@ void bpe_encode(char *text, int bos, int eos, char **vocab, real *vocab_scores, 
 // The Sampler, which takes logits and returns a sampled token
 // sampling can be done in a few ways: greedy argmax, sampling, top-p sampling
 
-typedef struct {
-	real prob;
-	int index;
-} ProbIndex; // struct used when sorting probabilities during top-p sampling
-
 static int sample_argmax(real* probabilities, int n)
 {
 	// return the index that has the highest probability
@@ -1941,7 +1958,12 @@ static int sample_mult(real* probabilities, int n, real coin)
 	return n-1; // in case of rounding errors
 }
 
-int compare(const void* a, const void* b)
+// top-p sampling (or "nucleus sampling") samples (https://zenn.dev/hellorusk/articles/1c0bef15057b1d)
+typedef struct {
+	real prob;
+	int index;
+} ProbIndex; // struct used when sorting probabilities during top-p sampling
+static int prob_compare(const void* a, const void* b)
 {
 	ProbIndex* a_ = (ProbIndex*) a;
 	ProbIndex* b_ = (ProbIndex*) b;
@@ -1949,18 +1971,19 @@ int compare(const void* a, const void* b)
 	if (a_->prob < b_->prob) return 1;
 	return 0;
 }
-int sample_topp(real* probabilities, int n, real topp, ProbIndex* probindex, real coin)
+static ProbIndex *probindex = 0;
+static void prob_free() { free(probindex); }
+static int sample_topp(real* probabilities, int n, real topp, real topk, real coin)
 {
-	// top-p sampling (or "nucleus sampling") samples from the smallest set of
-	// tokens that exceed probability topp. This way we never sample tokens that
-	// have very low probabilities and are less likely to go "off the rails".
+	static ProbIndex *probindex = 0;
+	if (!probindex) {
+		probindex = malloc(n * sizeof(ProbIndex));
+		atexit(prob_free);
+	}
 
-	int n0 = 0;
-	// quicksort indices in descending order of probabilities
-	// values smaller than (1 - topp) / (n - 1) cannot be part of the result
-	// so for efficiency we crop these out as candidates before sorting
 //	const real cutoff = (1.0 - topp) / (n - 1);
-	const real cutoff = 0.001; //a practical lowerbound for the probabilities that get sampled
+	const real cutoff = topk; // a practical lowerbound for the probabilities that get sampled
+	int n0 = 0;
 	for (int i=0; i<n; i++) {
 		if (probabilities[i] >= cutoff) {
 			probindex[n0].index = i;
@@ -1968,7 +1991,7 @@ int sample_topp(real* probabilities, int n, real topp, ProbIndex* probindex, rea
 			n0++;
 		}
 	}
-	qsort(probindex, n0, sizeof(ProbIndex), compare);
+	qsort(probindex, n0, sizeof(ProbIndex), prob_compare);
 
 	// truncate the list where cumulative probability exceeds topp
 	real cumulative_prob = 0.0;
@@ -1993,167 +2016,90 @@ int sample_topp(real* probabilities, int n, real topp, ProbIndex* probindex, rea
 	return probindex[last_idx].index; // in case of rounding errors
 }
 
-void generate(cats_ggml_model *m, char *prompt, int steps, real temperature, real topp)
+static char* cats_llm_generate_loop(cats_llm_model *m)
+{
+	// forward the transformer to get logits for the next token
+	real* logits = cats_llama2_transformer(m->token, m->pos++, m);
+
+	// advance the state machine
+	if (m->pos < m->num_prompt_tokens) {
+		// if we are still processing the input prompt, force the next prompt token
+		m->next = m->prompt_tokens[m->pos];
+	} else {
+		// otherwise sample the next token from the logits
+		if (m->temperature == 0.0) {
+			// greedy argmax sampling
+			m->next = sample_argmax(logits, m->n_vocab);
+		} else {
+			// apply the temperature to the logits
+			for (int q=0; q<m->n_vocab; q++) {
+				logits[q] /= m->temperature;
+			}
+			// apply softmax to the logits to get the probabilities for next token
+			softmax(logits, m->n_vocab);
+			// flip a (float) coin (this is our source of entropy for sampling)
+			float coin = random_f32();
+			// we sample from this distribution to get the next token
+			if (m->topp <= 0 || m->topp >= 1) {
+				// simply sample from the predicted probability distribution
+				m->next = sample_mult(logits, m->n_vocab, coin);
+			} else {
+				// top-p (nucleus) sampling, clamping the least likely tokens to zero
+				m->next = sample_topp(logits, m->n_vocab, m->topp, m->topk, coin);
+			}
+		}
+	}
+	// data-dependent terminating condition: the BOS (=1) token delimits sequences
+	if (m->next==1/*<s>*/ || m->next==2/*</s>*/) return 0;
+
+	// decode it with the Tokenizer object
+	char* piece = bpe_decode(m, m->token, m->next);
+	m->token = m->next;
+	return piece;
+}
+static void cats_llm_generate(cats_llm_model *m, char *prompt)
 {
 	// encode the (string) prompt into tokens sequence
 	if (prompt == NULL) prompt = "";
-	int num_prompt_tokens = 0;
-	int* prompt_tokens = (int*)malloc((strlen(prompt)+3) * sizeof(int)); // +3 for '\0', ?BOS, ?EOS
-	bpe_encode(prompt, 1, 0, m->vocab, m->score, m->n_vocab, m->max_token_length, prompt_tokens, &num_prompt_tokens);
-	if (num_prompt_tokens < 1) {
+	m->num_prompt_tokens = 0;
+	m->prompt_tokens = (int*)malloc((strlen(prompt)+3) * sizeof(int)); // +3 for '\0', ?BOS, ?EOS
+	bpe_encode(prompt, 1, 0, m->vocab, m->score, m->n_vocab, m->max_token_length, m->prompt_tokens, &m->num_prompt_tokens);
+	if (m->num_prompt_tokens < 1) {
 		fprintf(stderr, "Something is wrong, expected at least 1 prompt token.\n");
 		exit(EXIT_FAILURE);
 	}
 	printf("token id:");
-	for (int i=0; i<num_prompt_tokens; i++) {
-		printf(" %d", prompt_tokens[i]);
+	for (int i=0; i<m->num_prompt_tokens; i++) {
+		printf(" %d", m->prompt_tokens[i]);
 	}
 	printf("\n");
-	ProbIndex *probindex = calloc(m->n_vocab, sizeof(ProbIndex));
 
 	// start the main loop
 	long start = 0;	// used to time our code, only initialized after first iteration
-	int next;	// will store the next token in the sequence
-	int token = prompt_tokens[0]; // kick off with the first token in the prompt
-	int pos = 0;	// position in the sequence
-	while (pos < steps) {
-		// forward the transformer to get logits for the next token
-		real* logits = cats_llama2_transformer(token, pos++, m);
-
-		// advance the state machine
-		if (pos < num_prompt_tokens) {
-			// if we are still processing the input prompt, force the next prompt token
-			next = prompt_tokens[pos];
-		} else {
-			// otherwise sample the next token from the logits
-			if (temperature == 0.0) {
-				// greedy argmax sampling
-				next = sample_argmax(logits, m->n_vocab);
-			} else {
-				// apply the temperature to the logits
-				for (int q=0; q<m->n_vocab; q++) {
-					logits[q] /= temperature;
-				}
-				// apply softmax to the logits to get the probabilities for next token
-				softmax(logits, m->n_vocab);
-				// flip a (float) coin (this is our source of entropy for sampling)
-				float coin = random_f32();
-				// we sample from this distribution to get the next token
-				if (topp <= 0 || topp >= 1) {
-					// simply sample from the predicted probability distribution
-					next = sample_mult(logits, m->n_vocab, coin);
-				} else {
-					// top-p (nucleus) sampling, clamping the least likely tokens to zero
-					next = sample_topp(logits, m->n_vocab, topp, probindex, coin);
-				}
-			}
-		}
-		// data-dependent terminating condition: the BOS (=1) token delimits sequences
-//		if (next==1/*<s>*/) break;
-		if (next==1/*<s>*/ || next==2/*</s>*/) break;
-
-		// print the token as string, decode it with the Tokenizer object
-		char* piece = bpe_decode(m, token, next);
+//	m->next;	// will store the next token in the sequence
+	m->token = m->prompt_tokens[0]; // kick off with the first token in the prompt
+	m->pos = 0;	// position in the sequence
+#ifdef __EMSCRIPTEN__
+	emscripten_set_main_loop_arg(cats_llm_generate_loop, m, 0, 1);
+#else
+	while (m->pos < m->steps) {
+		char* piece = cats_llm_generate_loop(m);
+		if (!piece) break;
 		sprint(piece); // same as printf("%s", piece), but skips "unsafe" bytes
 		fflush(stdout);
-		token = next;
 
 		// init the timer here because the first iteration can be slower
 		if (start == 0) start = time_in_ms();
 	}
 	printf("\n");
+#endif
 
 	// report achieved tok/s (pos-1 because the timer starts after first iteration)
-	if (pos > 1) {
+	if (m->pos > 1) {
 		long end = time_in_ms();
-		fprintf(stderr, "achieved tok/s: %f\n", (pos-1) / (double)(end-start)*1000);
+		fprintf(stderr, "achieved tok/s: %f\n", (m->pos-1) / (double)(end-start)*1000);
 	}
-	free(prompt_tokens);
-	free(probindex);
-
-/*	// process the prompt, if any
-	int *prompt_tokens = NULL;
-	int num_prompt_tokens = 0;
-	if (prompt != NULL) {
-		prompt_tokens = (int*)malloc((strlen(prompt)+1) * sizeof(int));
-		bpe_encode(prompt, 1, 0, m->vocab, m->score, m->n_vocab, m->max_token_length, prompt_tokens, &num_prompt_tokens);
-		for (int i=0; i<num_prompt_tokens; i++) {
-			printf("%d ", prompt_tokens[i]);
-		}
-		printf("\n");
-	}
-	ProbIndex *probindex = calloc(m->n_vocab, sizeof(ProbIndex));
-
-	// start the main loop
-	long start = 0;	// used to time our code, only initialized after first iteration
-	int next;	// will store the next token in the sequence
-	int token = 1;	// init with token 1 (=BOS), as done in Llama-2 sentencepiece tokenizer
-	int pos = 0;	// position in the sequence
-	//printf("<s>\n"); // explicit print the initial BOS token (=1), stylistically symmetric
-	while (pos < steps) {
-		// forward the transformer to get logits for the next token
-		real* logits = cats_llama2_transformer(token, pos, m);
-
-		// advance the state state machine
-		if (pos < num_prompt_tokens) {
-			// if we are still processing the input prompt, force the next prompt token
-			next = prompt_tokens[pos];
-		} else {
-			// sample the next token
-			if (temperature == 0.0) {
-				// greedy argmax sampling
-				next = sample_argmax(logits, m->n_vocab);
-			} else {
-				// apply the temperature to the logits
-				for (int q=0; q<m->n_vocab; q++) {
-					logits[q] /= temperature;
-				}
-				// apply softmax to the logits to get the probabilities for next token
-				softmax(logits, m->n_vocab);
-				// flip a (float) coin (this is our source of entropy for sampling)
-				float coin = random_f32();
-				// we sample from this distribution to get the next token
-				if (topp <= 0 || topp >= 1) {
-					// simply sample from the predicted probability distribution
-					next = sample_mult(logits, m->n_vocab, coin);
-				} else {
-					// top-p (nucleus) sampling, clamping the least likely tokens to zero
-					next = sample_topp(logits, m->n_vocab, topp, probindex, coin);
-				}
-			}
-		}
-		pos++;
-
-		// data-dependent terminating condition: the BOS (1) token delimits sequences
-		if (next==1) break;
-
-		// following BOS token (1), sentencepiece decoder strips any leading whitespace (see PR #89)
-		char *token_str = (token == 1 && m->vocab[next][0] == ' ') ? m->vocab[next]+1 : m->vocab[next];
-		// careful, some tokens designate raw bytes, and look like e.g. '<0x01>'
-		uint8_t byte_val;
-		if (sscanf(token_str, "<0x%02hhX>", &byte_val) == 1) {
-			// ok this token is a raw byte token, carefuly to only print printable chars or whitespace
-			// some of the other bytes can be various control codes, backspace, etc. => skip
-			if (isprint(byte_val) || isspace(byte_val)) {
-				char byte_piece[2];
-				byte_piece[0] = byte_val;
-				byte_piece[1] = '\0';
-				printf("%s", byte_piece);
-			}
-		} else {
-			printf("%s", token_str);
-		}
-		fflush(stdout);
-		token = next;
-
-		// init the timer here because the first iteration can be slower
-		if (start == 0) { start = time_in_ms(); }
-	}
-	// report achieved tok/s
-	long end = time_in_ms();
-	printf("\nachieved tok/s: %f\n", (steps-1) / (double)(end-start)*1000);
-
-	free(probindex);*/
+	free(m->prompt_tokens);
 }
 
 static void read_stdin(const char* guide, char* buffer, size_t bufsize)
@@ -2167,10 +2113,8 @@ static void read_stdin(const char* guide, char* buffer, size_t bufsize)
 		}
 	}
 }
-void chat(cats_ggml_model *m, char *cli_user_prompt, char *cli_system_prompt, int steps, real temperature, real topp)
+static void cats_llm_chat(cats_llm_model *m, char *cli_user_prompt, char *cli_system_prompt)
 {
-	ProbIndex *probindex = calloc(m->n_vocab, sizeof(ProbIndex));
-
 	// buffers for reading the system prompt and user prompt from stdin
 	// you'll notice they are soomewhat haphazardly and unsafely set atm
 	char system_prompt[512];
@@ -2186,7 +2130,7 @@ void chat(cats_ggml_model *m, char *cli_user_prompt, char *cli_system_prompt, in
 	int token;       // stores the current token to feed into the transformer
 	int prev_token;
 	int pos = 0;     // position in the sequence
-	while (pos < steps) {
+	while (pos < m->steps) {
 		// when it is the user's turn to contribute tokens to the dialog...
 		if (user_turn) {
 			// get the (optional) system prompt at position 0
@@ -2238,13 +2182,13 @@ void chat(cats_ggml_model *m, char *cli_user_prompt, char *cli_system_prompt, in
 		real* logits = cats_llama2_transformer(token, pos, m);
 //		next = sample(sampler, logits);
 		// sample the next token
-		if (temperature == 0.0) {
+		if (m->temperature == 0.0) {
 			// greedy argmax sampling
 			next = sample_argmax(logits, m->n_vocab);
 		} else {
 			// apply the temperature to the logits
 			for (int q=0; q<m->n_vocab; q++) {
-				logits[q] /= temperature;
+				logits[q] /= m->temperature;
 			}
 			// apply softmax to the logits to get the probabilities for next token
 			softmax(logits, m->n_vocab);
@@ -2252,12 +2196,12 @@ void chat(cats_ggml_model *m, char *cli_user_prompt, char *cli_system_prompt, in
 //			float coin = random_f32(&sampler->rng_state);
 			float coin = random_f32();
 			// we sample from this distribution to get the next token
-			if (topp <= 0 || topp >= 1) {
+			if (m->topp <= 0 || m->topp >= 1) {
 				// simply sample from the predicted probability distribution
 				next = sample_mult(logits, m->n_vocab, coin);
 			} else {
 				// top-p (nucleus) sampling, clamping the least likely tokens to zero
-				next = sample_topp(logits, m->n_vocab, topp, probindex, coin);
+				next = sample_topp(logits, m->n_vocab, m->topp, m->topk, coin);
 			}
 		}
 		pos++;
@@ -2272,7 +2216,6 @@ void chat(cats_ggml_model *m, char *cli_user_prompt, char *cli_system_prompt, in
 	}
 	printf("\n");
 	free(prompt_tokens);
-	free(probindex);
 }
 
 //---------------------------------------------------------
@@ -2299,8 +2242,6 @@ enum llama_ftype {
 	LLAMA_FTYPE_MOSTLY_Q4_0          = 2, // except 1d tensors
 	LLAMA_FTYPE_MOSTLY_Q4_1          = 3, // except 1d tensors
 	LLAMA_FTYPE_MOSTLY_Q4_1_SOME_F16 = 4, // tok_embeddings.weight and output.weight are F16
-	// LLAMA_FTYPE_MOSTLY_Q4_2       = 5, // support has been removed
-	// LLAMA_FTYPE_MOSTLY_Q4_3       = 6, // support has been removed
 	LLAMA_FTYPE_MOSTLY_Q8_0          = 7, // except 1d tensors
 	LLAMA_FTYPE_MOSTLY_Q5_0          = 8, // except 1d tensors
 	LLAMA_FTYPE_MOSTLY_Q5_1          = 9, // except 1d tensors
@@ -2343,7 +2284,6 @@ static void dequantize_file(int fd, cats_tensor *t, int f)
 	// unzip to f32
 	t->matmul = matmul_f32;
 	switch (t->type) {
-//	case LLAMA_FTYPE_MOSTLY_F16:
 	case LLAMA_FTYPE_ALL_F32:
 		read(fd, t->data, t->size);
 		break;
@@ -2361,7 +2301,6 @@ static void dequantize_file(int fd, cats_tensor *t, int f)
 
 static inline uint64_t cats_gsize(int type, uint32_t shape0, uint32_t shape1)
 {
-//	uint64_t size = shape1 ? shape0*shape1 : shape0;
 	switch (type) {
 	case LLAMA_FTYPE_ALL_F32:
 		return shape0 * sizeof(float);
@@ -2374,7 +2313,7 @@ static inline uint64_t cats_gsize(int type, uint32_t shape0, uint32_t shape1)
 	return 0;
 }
 
-static int cats_ggml_load(char *name, cats_ggml_model *m)
+static int cats_ggml_load(char *name, cats_llm_model *m)
 {
 	FILE *fp = fopen(name, "rb");
 	if (!fp) {
@@ -2722,7 +2661,7 @@ struct gguf_kv {
 	union gguf_value value;
 };
 
-static int cats_gguf_load(char *name, cats_ggml_model *m)
+static int cats_gguf_load(char *name, cats_llm_model *m)
 {
 	int fd = open(name, O_RDONLY);
 	if (fd == -1) {
@@ -2741,8 +2680,8 @@ static int cats_gguf_load(char *name, cats_ggml_model *m)
 		printf("Invalid GGUF file.\n");
 		return 1;
 	}
-	if (header.version != 2) {
-		printf("Unsupported GGUF version.\n");
+	if (header.version!=2 && header.version!=3) {
+		printf("Unsupported GGUF version: %d\n", header.version);
 		return 1;
 	}
 
@@ -2925,7 +2864,7 @@ static int cats_gguf_load(char *name, cats_ggml_model *m)
 				m->rms_ffn_weight[l] = &m->tensor[i];
 //				for (int n=0; n<m->tensor[i].size/sizeof(float); n++) printf("%f ", ((float*)m->tensor[i].data)[n]);
 			} else {
-				printf("Not support %d: %s(%s)\n", l, m->tensor[i].name, s);
+				printf("%d: Not support %s(%s)\n", l, s, m->tensor[i].name);
 			}
 		}
 		putchar('.');
@@ -2944,12 +2883,12 @@ static int cats_gguf_load(char *name, cats_ggml_model *m)
 //---------------------------------------------------------
 // bin format
 
-static int cats_checkpoint_load(char *checkpoint, cats_ggml_model *m)
+static int cats_checkpoint_load(char *checkpoint, cats_llm_model *m)
 {
 	// memory map the Transformer weights into the data pointer
 	int fd = open(checkpoint, O_RDONLY);
 	if (fd == -1) {
-		fprintf(stderr, "open failed!\n");
+		fprintf(stderr, "Couldn't open file %s\n", checkpoint);
 		return 0;
 	}
 	/*for (int i=0; i<100; i++) printf("%f,%f ", w->freq_cis_real[i], w->freq_cis_imag[i]);
@@ -2958,17 +2897,18 @@ static int cats_checkpoint_load(char *checkpoint, cats_ggml_model *m)
 	for (int i=0; i<100; i++) printf("%f,%f ", w->freq_cis_real[i], w->freq_cis_imag[i]);
 	printf("\n");*/
 
+	int32_t vocab_size;
 	read(fd, &m->n_embd, sizeof(m->n_embd));
 	read(fd, &m->n_hidden, sizeof(m->n_hidden));
 	read(fd, &m->n_layer, sizeof(m->n_layer));
 	read(fd, &m->n_head, sizeof(m->n_head));
 	read(fd, &m->n_kv_head, sizeof(m->n_kv_head));
-	read(fd, &m->n_vocab, sizeof(m->n_vocab));
+	read(fd, &vocab_size, sizeof(vocab_size));
 	read(fd, &m->seq_len, sizeof(m->seq_len));
-	int shared_weights = m->n_vocab > 0 ? 1 : 0;
-	m->n_vocab = abs(m->n_vocab);
+	int shared_weights = vocab_size > 0 ? 1 : 0;
+	m->n_vocab = abs(vocab_size);
 
-	// for cats_ggml_model
+	// for cats_llm_model
 	int head_size = m->n_embd / m->n_head;
 	m->token_embedding_table = &m->tensor[0];
 	m->rms_final_weight = &m->tensor[1];
