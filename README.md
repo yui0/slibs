@@ -8,11 +8,11 @@ Single file libraries for C/C++.
 
 ![Logo](slibs.jpeg)
 
-## AI
+## AI ([llm](https://github.com/yui0/slibs/tree/master/catseye), [Stable Diffusion](https://github.com/yui0/slibs/tree/master/ggml/stable-diffusion))
 | library                                                               | license              |  LoC  | description
 | --------------------------------------------------------------------- |:--------------------:|:-----:| -----------
 | **[catseye_llm.h](catseye/catseye_llm.h)**                            | MIT                  |  1874 | <details><summary>Llama2 for CPU</summary>[Llama2](https://github.com/yui0/slibs/tree/master/catseye), [catseye](https://github.com/yui0/catseye)</details>
-| **[ggml.h](ggml/ggml.h)**                                             | MIT                  | 20352 | [Tensor library for machine learning](https://github.com/ggerganov/ggml), <details><summary>details</summary>Llama 2, RedPajama, Stable Diffusion</details>
+| **[ggml.h](ggml/ggml.h)**                                             | MIT                  | 20352 | [Tensor library for machine learning](https://github.com/ggerganov/ggml), <details><summary>details</summary>[GGML](https://github.com/yui0/slibs/tree/master/ggml), [Llama 2](https://github.com/yui0/slibs/tree/master/ggml/llama), [RedPajama](https://github.com/yui0/slibs/tree/master/ggml/redpajama), [Stable Diffusion](https://github.com/yui0/slibs/tree/master/ggml/stable-diffusion)</details>
 
 ## audio
 | library                                                               | license              |  LoC  | description
