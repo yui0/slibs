@@ -6,6 +6,25 @@
 
 Single file libraries for C/C++.
 
+![Logo](slibs.jpeg)
+
+# audio
+| library                                                               | license              |  LoC  | description
+| --------------------------------------------------------------------- |:--------------------:|:-----:| -----------
+| **[alsa.h](alsa.h)**                                                  | public domain        |   138 | [ALSA library](https://github.com/yui0/aplay-)
+| **[uaac.h](uaac.h)**                                                  | RPSL                 | 13438 | [AAC audio decoder](https://github.com/yui0/aplay-)
+| **[uflac_enc.h](uflac_enc.h)**                                        | LGPL-2.1             |  2843 | FLAC audio encoder
+| **[wav.h](wav.h)**                                                    | public domain        |    61 | Wave format
+| **[wave.h](wave.h)**                                                  | public domain        |   304 | utility for wave format
+| **[minimp3.h](minimp3.h)**                                            | LGPL                 |  2671 | [MP3 decoder](https://oldforum.puppylinux.com/viewtopic.php?t=59417)
+
+# video
+| library                                                               | license              |  LoC  | description
+| --------------------------------------------------------------------- |:--------------------:|:-----:| -----------
+| **[v4l2.h](v4l2.h)**                                                  | public domain        |   614 | video for linux
+| **[mp4parser.h](mp4parser.h)**                                        | LGPL-3.0             |  6015 | mp4 parser
+| **[jo_mpeg.h](jo_mpeg.h)**                                            | public domain        |   317 | [MPEG1/2 encoder](http://www.jonolick.com/home/mpeg-video-writer)
+
 |library | category | LoC | license | description
 | --------------------- | -------- | --- | --- | --------------------------------
 |**[alsa.h](alsa.h)** | audio | 138 | public domain | [ALSA library](https://github.com/yui0/aplay-)
