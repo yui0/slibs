@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifndef GL_GLEXT_PROTOTYPES
@@ -209,9 +210,9 @@ GLuint coCreateDataTexture(int w, int h, void *texels, GLuint type, int flag)
 	// clamp to edge to support non-power of two textures
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, clamp);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, clamp);*/
-#endif
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+#endif
 	// don't interpolate when getting data from texture
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -235,9 +236,7 @@ void coBindInputTexture(GLuint program, GLuint texture, GLuint textureUnit, char
 
 GLuint coBindOutputTexture(int N, int M, GLuint texture)
 {
-	// set canvas and viewport size
 	glViewport(0, 0, N, M);
-
 	GLuint framebuffer;
 	glGenFramebuffers(1, &framebuffer);
 	glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);

@@ -1,10 +1,14 @@
 // OMP_NUM_THREADS=8 gcc -o gpgpu_gles_matmul gpgpu_gles_matmul.c -fopenmp -Ofast -march=native -mavx -funroll-loops -lglfw -lGL
 // emcc -o gpgpu_gles_matmul.html gpgpu_gles_matmul.c -Oz -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1 -s USE_GLFW=3 -s USE_WEBGL2=1 -sMAX_WEBGL_VERSION=2 -sWEBGL2_BACKWARDS_COMPATIBILITY_EMULATION -sASSERTIONS
 
+#define GEMM_TEST
+#define DEBUG
+#include "gpgpu_gles.h"
+
 #include <stdio.h>
-#include <stdlib.h>
 #include <time.h>
 
+#ifndef malloc
 #define ALIGN		256
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #define malloc(size)	_aligned_malloc(size, ALIGN)
@@ -15,23 +19,21 @@
 #endif  /* _MSC_VER */
 //#define calloc(n, size)	({ uint64_t _s = n * size; void* _p = malloc(_s); memset(_p, 0, _s)!=0 ? _p : NULL; })
 #define calloc(n, size)	({ uint64_t _s = n * size; void* _p; posix_memalign((void**) &_p, ALIGN, (_s))==0 ? _p : NULL; })
+#endif
 
 // from cblas.h
 typedef enum CBLAS_ORDER     {CblasRowMajor=101, CblasColMajor=102} CBLAS_ORDER;
 typedef enum CBLAS_TRANSPOSE {CblasNoTrans=111, CblasTrans=112, CblasConjTrans=113, CblasConjNoTrans=114} CBLAS_TRANSPOSE;
 // end from cblas.h
 
+#ifdef DEBUG
 static inline double now_ms()
 {
 	struct timespec res;
 	clock_gettime(CLOCK_REALTIME, &res);
 	return 1000.0 * res.tv_sec + (double)res.tv_nsec / 1e6;
 }
-
-#include <stdlib.h>
-#define DEBUG
-//#define GPGPU_USE_GLES
-#include "gpgpu_gles.h"
+#endif
 
 char matmul_source[] = "#version 300 es\n" STRINGIFY(
 precision highp float;
@@ -86,6 +88,10 @@ static void matmul_gpu(float* __restrict xout, void* __restrict _x, void* __rest
 	printf("  matmul_gpu elapsed time: %f ms, %f GFlops\n", mtime, (2*n*d)/(mtime*1e6));
 #endif
 	coReadDataf(dd, 1, xout);
+
+	glDeleteTextures(1, &texture0);
+	glDeleteTextures(1, &texture1);
+	glDeleteTextures(1, &texture2);
 }
 static void matmul_gpu_init()
 {
@@ -97,20 +103,16 @@ static void matmul_gpu_term()
 	coTerm();
 }
 
+#ifdef GEMM_TEST
 static void gemm_gpu(const int M, const int N, const int K, const float *A, const float *B, float *C)
 {
 	matmul_gpu((float* __restrict)C, (void* __restrict)B, (void* __restrict)A, (int)K, (int)M);
 }
 
-static void sgemm_naive
-(
-	const int M,
-	const int N,
-	const int K,
-	const float *A,                       // m x k (after transpose if TransA)
-	const float *B,                       // k x n (after transpose if TransB)
-	float *C                              // m x n
-)
+// A: m x k (after transpose if TransA)
+// B: k x n (after transpose if TransB)
+// C: m x n
+static void sgemm_naive(const int M, const int N, const int K, const float *A, const float *B, float *C)
 {
 //	bool transpose_A = false;
 //	bool transpose_B = false;
@@ -220,3 +222,4 @@ int main(int argc, char** argv)
 	}
 	printf("  Zeros: %d\n", nZeros);
 }
+#endif

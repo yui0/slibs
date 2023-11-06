@@ -14,7 +14,7 @@ Single file libraries for C/C++.
 | **[catseye_llm.h](catseye/catseye_llm.h)**                            | MIT                  |  1874 | <details><summary>Llama2 for CPU</summary>[Llama2](https://github.com/yui0/slibs/tree/master/catseye), [catseye](https://github.com/yui0/catseye)</details>
 | **[ggml.h](ggml/ggml.h)**                                             | MIT                  | 20352 | [Tensor library for machine learning](https://github.com/ggerganov/ggml), <details><summary>details</summary>[GGML](https://github.com/yui0/slibs/tree/master/ggml), [Llama 2](https://github.com/yui0/slibs/tree/master/ggml/llama), [RedPajama](https://github.com/yui0/slibs/tree/master/ggml/redpajama), [Stable Diffusion](https://github.com/yui0/slibs/tree/master/ggml/stable-diffusion)</details>
 
-## audio
+## audio ([aplay+](https://github.com/yui0/aplay-)
 | library                                                               | license              |  LoC  | description
 | --------------------------------------------------------------------- |:--------------------:|:-----:| -----------
 | **[alsa.h](alsa.h)**                                                  | public domain        |   138 | [ALSA library](https://github.com/yui0/aplay-)
@@ -31,7 +31,7 @@ Single file libraries for C/C++.
 | **[mp4parser.h](mp4parser.h)**                                        | LGPL-3.0             |  6015 | mp4 parser
 | **[jo_mpeg.h](jo_mpeg.h)**                                            | public domain        |   317 | [MPEG1/2 encoder](http://www.jonolick.com/home/mpeg-video-writer)
 
-## image
+## image ([img2vec](https://github.com/yui0/img2vec))
 | library                                                               | license              |  LoC  | description
 | --------------------------------------------------------------------- |:--------------------:|:-----:| -----------
 | **[imgp.h](imgp.h)**                                                  | public domain        |   441 | mini image processing library
@@ -52,7 +52,7 @@ Single file libraries for C/C++.
 | **[fmath.h](fmath.h)**                                                | public domain        |   142 | Fast math library
 | **[random.h](random.h)**                                              | public domain        |    33 | XOR128 random function
 
-## math / GEMM / GPGPU
+## math / GEMM / GPGPU ([ waifu2x-glsl](https://github.com/yui0/waifu2x-glsl)
 | library                                                               | license              |  LoC  | description
 | --------------------------------------------------------------------- |:--------------------:|:-----:| -----------
 | **[sgemm_sse.h](sgemm_sse.h)**                                        | public domain        |   451 | [Fast GEMM function for SSE](https://github.com/yui0/ugemm)
