@@ -12,7 +12,7 @@
 #include <fcntl.h>
 
 #if defined _WIN32
-  #include "win.h"
+  //#include "win.h"
 #else
   #include <sys/mman.h>
   #include <unistd.h>
@@ -21,6 +21,10 @@
 #if defined(__SSE__) || defined(__AVX__)
   #include <xmmintrin.h>
   #include <immintrin.h>
+#endif
+
+#ifdef GPGPU
+  #include "gpgpu_matmul.h"
 #endif
 
 #ifdef DTYPE
@@ -626,11 +630,17 @@ static void cats_llm_malloc(cats_llm_model* m)
 
 	size_t size;
 	size = m->n_embd*4 +m->n_hidden*2 +m->n_embd +m->n_embd*m->seq_len +m->n_vocab +m->n_layer * m->seq_len * kv_dim *2;
-        printf("memory: %6.2f MB (%ld bytes)\n", size/(1024.0*1024.0), size);
+	printf("memory: %6.2f MB (%ld bytes)\n", size/(1024.0*1024.0), size);
+#ifdef GPGPU
+	matmul_gpu_init();
+#endif
 }
 
 static void cats_llm_free(cats_llm_model* m)
 {
+#ifdef GPGPU
+	matmul_gpu_term();
+#endif
 	free(m->x);
 	free(m->xb);
 	free(m->xb2);
@@ -2571,7 +2581,11 @@ void matmul_null(real* restrict o, void* restrict x, void* restrict w, int n, in
 {
 }
 void (*gguf_matmul[])(real* restrict, void* restrict, void* restrict, int, int) = {
+#ifdef GPGPU
+	[GGML_TYPE_F32]  = matmul_gpu,
+#else
 	[GGML_TYPE_F32]  = matmul_f32,
+#endif
 	[GGML_TYPE_Q4_0] = matmul_q4_0_q8,
 	[GGML_TYPE_Q3_K] = matmul_q3_K_q8_K,
 	[GGML_TYPE_Q6_K] = matmul_q6_K_q8_K,

@@ -1,10 +1,12 @@
-# LLM
+# LLM 💬
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 Inference of LLM model in pure C.
 
-### Features
+![Logo](llm.jpeg)
+
+### 🌟 Features
 
 - Plain C implementation without dependencies
 - AVX support for x86 architectures
@@ -21,7 +23,7 @@ Inference of LLM model in pure C.
 - [x] LLaMA 2 🦙🦙
 - [X] [Mistral AI v0.1](https://huggingface.co/mistralai/Mistral-7B-v0.1)
 
-### How to build
+### 🔧 How to build
 
 ```
 $ make
@@ -33,7 +35,7 @@ $ make
 $ emcc -o llama2.html llama2.c --pre-js pre.js -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1 -sSTACK_SIZE=2000000
 ```
 
-### How to convert the model
+### 💱 How to convert the model
 
 ```
 mkdir llama2
@@ -45,9 +47,9 @@ python3 export.py llama2_7b.bin --meta-llama llama2
 python3 export.py llama2_7b_q8.bin --meta-llama ./llama/ --version 2
 ```
 
-### How to use
+### 🌸 How to use
 
-#### TinyLlama
+#### 🦙 TinyLlama
 
 ```
 $ wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories42M.bin
@@ -77,7 +79,7 @@ Examplain Mt. Fuji.<|im_end|>
 
 ```
 
-#### Llama 2 (GGML)
+#### 🦙 Llama 2 (GGML)
 
 ```
 $ wget https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGML/resolve/main/llama-2-7b-chat.ggmlv3.q4_0.bin
@@ -155,7 +157,7 @@ The colors of autumn are perhaps its most iconic feature. As the weather cools, 
 In addition to its vibrant colors, autumn is also known for its crisp, cool air and the smell of wood smoke. The scent of burning leaves and the sound of crackling firep
 ```
 
-#### Llama 2 (GGUF)
+#### 🦙 Llama 2 (GGUF)
 
 ```
 $ wget https://huggingface.co/TheBloke/Llama-2-7b-Chat-GGUF/blob/main/llama-2-7b-chat.Q4_0.gguf
@@ -257,7 +259,7 @@ token id: 1 94 25580 29962 35 11921 35 275 35 29911 554 9029 35 392 35 3525 35 1
 achieved tok/s: 5.467835
 ```
 
-#### ELYZA
+#### 🍙 ELYZA
 
 ```
 $ ./llama2 -m models/ELYZA-japanese-Llama-2-7b-fast-instruct-q4_0.gguf -t 0.9 -p "[INST] 日本のおすすめの観光地を教えてください。 [/INST]"
@@ -298,27 +300,41 @@ Okinawa▁is▁a▁800▁km²▁island▁in▁the▁south-western▁region▁of�
 achieved tok/s: 2.298226
 ```
 
-### model
+### 📀 Models
 
 * Tiny Llama 1.1B model
   * The [TinyLlama](https://github.com/jzhang38/TinyLlama) is a 1.1B Llama model trained on 3 trillion tokens.
   * https://huggingface.co/PY007/TinyLlama-1.1B-Chat-v0.2-GGUF/resolve/main/ggml-model-q4_0.gguf
   * https://huggingface.co/kirp/TinyLlama-1.1B-Chat-v0.2-bin
   * https://github.com/karpathy/llama2.c/pull/408
-* Xwin-LM 13B V0.1
-  * https://huggingface.co/TheBloke/Xwin-LM-13B-V0.1-GGUF/resolve/main/xwin-lm-13b-v0.1.Q3_K_S.gguf
 * Llama2
   * https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGML
   * https://huggingface.co/TheBloke/Llama-2-7b-Chat-GGUF/resolve/main/llama-2-7b-chat.Q3_K_S.gguf
+* Zephy 7B beta (Mistral/GPT4)
+  * https://huggingface.co/TheBloke/zephyr-7B-beta-GGUF/resolve/main/zephyr-7b-beta.Q3_K_S.gguf
+  * "<|system|>
+You are a helpful assistant.</s>
+<|user|>
+Tell me a joke.</s>
+<|assistant|>"
+* japanese-stablelm-instruct-gamma-7b (Mistral)
+  * https://huggingface.co/mmnga/japanese-stablelm-instruct-gamma-7b-gguf/resolve/main/japanese-stablelm-instruct-gamma-7b-q4_0.gguf
+  * https://huggingface.co/mmnga/japanese-stablelm-3b-4e1t-instruct-gguf/resolve/main/japanese-stablelm-3b-4e1t-instruct-q4_0.gguf
+  * "### 指示:"+"\n"
+  * "### 入力:"+"\n"
 * Mistral
   * https://github.com/mistralai/mistral-src
   * https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.1-GGUF
+* rinna/youri-7b-instruction
+  * https://huggingface.co/mmnga/rinna-youri-7b-instruction-gguf/resolve/main/rinna-youri-7b-instruction-q4_0.gguf
+* Xwin-LM 13B V0.1
+  * https://huggingface.co/TheBloke/Xwin-LM-13B-V0.1-GGUF/resolve/main/xwin-lm-13b-v0.1.Q3_K_S.gguf
 * ELYZA-japanese-Llama-2
   * https://huggingface.co/mmnga/ELYZA-japanese-Llama-2-7b-fast-instruct-gguf/resolve/main/ELYZA-japanese-Llama-2-7b-fast-instruct-q4_0.gguf
 * CodeLlama
   * https://huggingface.co/TheBloke/CodeLlama-7B-Instruct-GGML/resolve/main/codellama-7b-instruct.ggmlv3.Q4_0.bin
 
-### ref.
+### 📖 References
 
 * https://qiita.com/birdwatcher/items/b3e4428f63f708db37b7
 * https://github.com/RahulSChand/llama2.c-for-dummies
