@@ -4,7 +4,7 @@
 
 Inference of LLM model in pure C.
 
-![Logo](llm.jpeg)
+![Logo](llm.jpg)
 
 ### 🌟 Features
 
