@@ -1,5 +1,5 @@
-// OMP_NUM_THREADS=8 gcc -o gpgpu_gles_matmul gpgpu_gles_matmul.c -fopenmp -Ofast -march=native -mavx -funroll-loops -lglfw -lGL
-// emcc -o gpgpu_gles_matmul.html gpgpu_gles_matmul.c -Oz -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1 -s USE_GLFW=3 -s USE_WEBGL2=1 -sMAX_WEBGL_VERSION=2 -sWEBGL2_BACKWARDS_COMPATIBILITY_EMULATION -sASSERTIONS
+// OMP_NUM_THREADS=8 gcc -o matmul matmul.c -fopenmp -Ofast -march=native -mavx -funroll-loops -lglfw -lGL
+// emcc -o matmul.html matmul.c -Oz -sALLOW_MEMORY_GROWTH=1 -sALLOW_TABLE_GROWTH=1 -s USE_GLFW=3 -s USE_WEBGL2=1 -sMAX_WEBGL_VERSION=2 -sWEBGL2_BACKWARDS_COMPATIBILITY_EMULATION -sASSERTIONS
 
 #define GEMM_TEST
 #define DEBUG
@@ -75,40 +75,40 @@ static void matmul_gpu(float* __restrict xout, void* __restrict _x, void* __rest
 	float* __restrict w = _w;
 	int nn = n/4;
 	int dd = d/4;
-	coBindVertices(gpu_prog_matmul);
-	GLuint texture0 = coCreateDataTexture(nn, 1, x, GLES_FLOAT, GPGPU_TEX_PADDING);
-//	GLuint texture1 = coCreateDataTexture(nn, d, w, GLES_FLOAT, GPGPU_TEX_PADDING);
-	GLuint texture1 = coCreateDataTexture(n, dd, w, GLES_FLOAT, GPGPU_TEX_PADDING);
-	GLuint texture2 = coCreateDataTexture(dd, 1, 0, GLES_FLOAT, 0);
-	coBindInputTexture(gpu_prog_matmul, texture0, GL_TEXTURE0, "A");
-	coBindInputTexture(gpu_prog_matmul, texture1, GL_TEXTURE1, "B");
-	coBindOutputTexture(dd, 1, texture2);
+	//gpu_set_vertices(gpu_prog_matmul);
+	GLuint texture0 = gpu_make_texture(nn, 1, x, GL_FLOAT);
+//	GLuint texture1 = gpu_make_texture(nn, d, w, GL_FLOAT);
+	GLuint texture1 = gpu_make_texture(n, dd, w, GL_FLOAT);
+	GLuint texture2 = gpu_make_texture(dd, 1, 0, GL_FLOAT);
+	gpu_set_input(gpu_prog_matmul, texture0, GL_TEXTURE0, "A");
+	gpu_set_input(gpu_prog_matmul, texture1, GL_TEXTURE1, "B");
+	gpu_set_output(dd, 1, texture2);
 #ifdef DEBUG
 	double t0 = now_ms();
 #endif
-	coCompute();
+	gpu_compute();
 #ifdef DEBUG
 	double t1 = now_ms();
 	double mtime = t1-t0;
 	printf("  matmul_gpu elapsed time: %f ms, %f GFlops\n", mtime, (2*n*d)/(mtime*1e6));
 #endif
-	coReadDataf(dd, 1, xout);
+	gpu_readf(dd, 1, xout);
 
-/*	coUnbindInputTexture(texture0);
-	coUnbindInputTexture(texture1);
-	coUnbindInputTexture(texture2);*/
+/*	gpu_unset_input(texture0);
+	gpu_unset_input(texture1);
+	gpu_unset_input(texture2);*/
 	glDeleteTextures(1, &texture0);
 	glDeleteTextures(1, &texture1);
 	glDeleteTextures(1, &texture2);
 }
 static void matmul_gpu_init()
 {
-	coInit();
-	gpu_prog_matmul = coCreateProgram(matmul_source);
+	gpu_init();
+	gpu_prog_matmul = gpu_compile(matmul_source);
 }
 static void matmul_gpu_term()
 {
-	coTerm();
+	gpu_term();
 }
 
 #ifdef GEMM_TEST

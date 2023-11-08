@@ -39,7 +39,7 @@
 
 //#define DEBUG
 #ifdef DEBUG
-void gpu_checkError(int line)
+void gpu_check_error(int line)
 {
 	GLenum err = glGetError();
 	if (err != GL_NO_ERROR) {
@@ -47,7 +47,7 @@ void gpu_checkError(int line)
 		exit(1);
 	}
 }
-#define GPU_CHECK() gpu_checkError(__LINE__);
+#define GPU_CHECK() gpu_check_error(__LINE__);
 #define debug(fmt, ... ) \
 	fprintf(stderr, \
 		"[%s] %s:%u # " fmt "\n", \
@@ -62,7 +62,7 @@ void gpu_checkError(int line)
 #define _STRGF(x)	# x
 #define STRINGIFY(x)	_STRGF(x)
 
-const char* fragment_shader_source = "#version 300 es\nvoid main(){}";
+const char* fragment_shader_source = "#version 320 es\nvoid main(){}";
 
 GLuint gpu_load_shader(GLenum shaderType, const char* pSource)
 {
@@ -80,6 +80,7 @@ GLuint gpu_load_shader(GLenum shaderType, const char* pSource)
 	GLuint shader = glCreateShader(shaderType);
 	glShaderSource(shader, 1, (const char**)&src, 0);
 	glCompileShader(shader);
+	GPU_CHECK();
 	GLint compiled;
 	glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
 	if (!compiled) {
@@ -97,7 +98,7 @@ GLuint gpu_load_shader(GLenum shaderType, const char* pSource)
 	return shader;
 }
 
-GLuint gpgpu_compile(const char* src, const char *varyings[])
+GLuint gpu_compile(const char* src, const char *varyings[])
 {
 	GLuint fragmentShader = gpu_load_shader(GL_FRAGMENT_SHADER, fragment_shader_source);
 	if (!fragmentShader) return 0;
@@ -140,7 +141,7 @@ GLuint gpgpu_compile(const char* src, const char *varyings[])
 	return program;
 }
 
-GLuint gpgpu_make_texture(int w, int h, float *texels)
+GLuint gpu_make_texture(int w, int h, float *texels)
 {
 	GLuint texture;
 	glGenTextures(1, &texture);
@@ -206,6 +207,9 @@ void gpu_init()
 	//printf("  Total available memory: %d MB\n", value[2]/1024);
 	glGetIntegerv(GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX, value); //GL_GPU_MEMORY_INFO_DEDICATED_VIDMEM_NVX,GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX
 	printf("  Total available memory: %d MB\n", value[0]/1024);
+
+	glGetIntegerv(GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS, value);
+	printf("  Max vertex texture image unit (VTF): %d\n", value[0]);
 }
 void gpu_term()
 {

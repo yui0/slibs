@@ -57,7 +57,7 @@
 
 //#define DEBUG
 #ifdef DEBUG
-void gpu_checkError(int line)
+void gpu_check_error(int line)
 {
 	GLenum err = glGetError();
 	if (err != GL_NO_ERROR) {
@@ -65,7 +65,7 @@ void gpu_checkError(int line)
 		exit(1);
 	}
 }
-#define GPU_CHECK() gpu_checkError(__LINE__);
+#define GPU_CHECK() gpu_check_error(__LINE__);
 #define debug(fmt, ... ) \
 	fprintf(stderr, \
 		"[%s] %s:%u # " fmt "\n", \
@@ -95,57 +95,7 @@ void main()
 );
 GLuint __vertexShader;
 
-GLuint coLoadShader(GLenum shaderType, const char* pSource)
-{
-	char *src = strdup(pSource);
-	char *p = src;
-	while (*p) {
-		switch (*p++) {
-		case '{':
-		case ';':
-			if (*p==0x20) *p = '\n';
-//			if (*p==0x20 && *(p+1)!='i') *p = '\n';
-		}
-	}
-
-	GLuint shader = glCreateShader(shaderType);
-	glShaderSource(shader, 1, (const char**)&src, 0);
-	glCompileShader(shader);
-	GLint compiled;
-	glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
-	if (!compiled) {
-		int logSize, length;
-		glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logSize);
-		if (logSize > 1) {
-			//GLchar infoLog[logSize];
-			GLchar infoLog[8192];
-			glGetShaderInfoLog(shader, logSize, &length, infoLog);
-			debug("Compile Error in %s\n%s\n", src, infoLog);
-		}
-	}
-	GPU_CHECK();
-
-	free(src);
-	return shader;
-}
-
-GLuint coCreateProgram(const char* pFragmentSource)
-{
-#ifdef _WIN32
-	if (!glCreateProgram) printf("glCreateProgram is NULL!! (OpenGL ver:%s)\n", glGetString(GL_VERSION));
-#endif
-	if (!__vertexShader) __vertexShader = coLoadShader(GL_VERTEX_SHADER, pass_through);
-	GLuint pixelShader = coLoadShader(GL_FRAGMENT_SHADER, pFragmentSource);
-	GLuint program = glCreateProgram();
-	glAttachShader(program, __vertexShader);
-	glAttachShader(program, pixelShader);
-	glDeleteShader(pixelShader);
-	glLinkProgram(program);
-	GPU_CHECK();
-	return program;
-}
-
-void coBindVertices(GLuint prog)
+void gpu_set_vertices(GLuint prog)
 {
 	glUseProgram(prog);
 
@@ -188,21 +138,81 @@ void coBindVertices(GLuint prog)
 	GPU_CHECK();
 }
 
+GLuint gpu_load_shader(GLenum shaderType, const char* pSource)
+{
+	char *src = strdup(pSource);
+	char *p = src;
+	while (*p) {
+		switch (*p++) {
+		case '{':
+		case ';':
+			if (*p==0x20) *p = '\n';
+//			if (*p==0x20 && *(p+1)!='i') *p = '\n';
+		}
+	}
+
+	GLuint shader = glCreateShader(shaderType);
+	glShaderSource(shader, 1, (const char**)&src, 0);
+	glCompileShader(shader);
+	GLint compiled;
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
+	if (!compiled) {
+		int logSize, length;
+		glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logSize);
+		if (logSize > 1) {
+			//GLchar infoLog[logSize];
+			GLchar infoLog[8192];
+			glGetShaderInfoLog(shader, logSize, &length, infoLog);
+			debug("Compile Error in %s\n%s\n", src, infoLog);
+		}
+	}
+	GPU_CHECK();
+
+	free(src);
+	return shader;
+}
+
+GLuint gpu_compile(const char* pFragmentSource)
+{
+#ifdef _WIN32
+	if (!glCreateProgram) printf("glCreateProgram is NULL!! (OpenGL ver:%s)\n", glGetString(GL_VERSION));
+#endif
+	if (!__vertexShader) __vertexShader = gpu_load_shader(GL_VERTEX_SHADER, pass_through);
+	GLuint pixelShader = gpu_load_shader(GL_FRAGMENT_SHADER, pFragmentSource);
+	GLuint program = glCreateProgram();
+	glAttachShader(program, __vertexShader);
+	glAttachShader(program, pixelShader);
+	glDeleteShader(pixelShader);
+	glLinkProgram(program);
+	GPU_CHECK();
+	gpu_set_vertices(program);
+	return program;
+}
+
+// https://webgl2fundamentals.org/webgl/lessons/webgl-data-textures.html
 #define GPGPU_TEX_PADDING	1
 #define GPGPU_TEX_REPEAT	2
-GLuint coCreateDataTexture(int w, int h, void *texels, GLuint type, int flag)
+GLuint gpu_make_texture(int w, int h, void *texels, GLuint type/*, int flag*/)
 {
 	GLuint texture;
 	glGenTextures(1, &texture);
 	glBindTexture(GL_TEXTURE_2D, texture);
 	GPU_CHECK();
 
-#ifndef GPGPU_USE_GLES
+	switch (type) {
+	case GL_FLOAT:
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, w, h, 0, GL_RGBA, type, texels);
+		break;
+	case GL_INT:
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32I, w, h, 0, GL_RGBA_INTEGER, type, texels);
+		break;
+	}
+/*#ifndef GPGPU_USE_GLES
 	glTexImage2D(GL_TEXTURE_2D, 0, (type==GLES_FLOAT ? GL_RGBA32F : GL_RGBA), w, h, 0, GL_RGBA, type, texels);
 #else
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, type, texels);
-#endif
-//	debug("coCreateDataTexture: %d, %d\n", w, h);
+#endif*/
+//	debug("gpu_make_texture: %d, %d\n", w, h);
 	GPU_CHECK();
 
 #ifndef EMSCRIPTEN
@@ -226,7 +236,7 @@ GLuint coCreateDataTexture(int w, int h, void *texels, GLuint type, int flag)
 	return texture;
 }
 
-void coBindInputTexture(GLuint program, GLuint texture, GLuint textureUnit, char *name)
+void gpu_set_input(GLuint program, GLuint texture, GLuint textureUnit, char *name)
 {
 	glActiveTexture(textureUnit); // gl.TEXTURE0, gl.TEXTURE1, etc
 	glBindTexture(GL_TEXTURE_2D, texture);
@@ -237,7 +247,7 @@ void coBindInputTexture(GLuint program, GLuint texture, GLuint textureUnit, char
 	assert(!glGetError());
 }
 
-GLuint coBindOutputTexture(int N, int M, GLuint texture)
+GLuint gpu_set_output(int N, int M, GLuint texture)
 {
 	glViewport(0, 0, N, M);
 	GLuint framebuffer;
@@ -255,14 +265,14 @@ GLuint coBindOutputTexture(int N, int M, GLuint texture)
 	return framebuffer;
 }
 
-void coUnbindInputTexture(GLuint texture)
+void gpu_unset_input(GLuint texture)
 {
 	glActiveTexture(texture);
 	glBindTexture(GL_TEXTURE_2D, 0);
 	GPU_CHECK();
 }
 
-void *coReadData(int N, int M, void *d)
+void *gpu_read(int N, int M, void *d)
 {
 	if (!d) d = malloc(4*M*N);
 	glReadPixels(0, 0, N, M, GL_RGBA, GL_UNSIGNED_BYTE, d);
@@ -270,7 +280,7 @@ void *coReadData(int N, int M, void *d)
 	return d; // M x N
 }
 
-float *coReadDataf(int N, int M, float *d)
+float *gpu_readf(int N, int M, float *d)
 {
 /*#ifdef GPGPU_USE_GLFW
 	if (!d) d = malloc(sizeof(float)*4*M*N);
@@ -284,56 +294,56 @@ float *coReadDataf(int N, int M, float *d)
 	return d;
 }
 
-#define coCompute() {\
+#define gpu_compute() {\
 	glDrawElements(GL_TRIANGLES, 3*2, GL_UNSIGNED_SHORT, 0);\
 }
 
-#define coAssert() {\
+#define gpu_assert() {\
 	assert(!glGetError());\
 }
 
-#define coUniform1i(prog, name, v1) {\
+#define gpu_param1i(prog, name, v1) {\
 	GLuint l = glGetUniformLocation(prog, name);\
 	glUniform1i(l, v1);\
 }
-#define coUniform1f(prog, name, v1) {\
+#define gpu_param1f(prog, name, v1) {\
 	GLuint l = glGetUniformLocation(prog, name);\
 	glUniform1f(l, v1);\
 }
-#define coUniform2f(prog, name, v1, v2) {\
+#define gpu_param2f(prog, name, v1, v2) {\
 	GLuint l = glGetUniformLocation(prog, name);\
 	glUniform2f(l, v1, v2);\
 }
-#define coUniform4f(prog, name, v1, v2, v3, v4) {\
+#define gpu_param4f(prog, name, v1, v2, v3, v4) {\
 	GLuint l = glGetUniformLocation(prog, name);\
 	glUniform4f(l, v1, v2, v3, v4);\
 }
-#define coUniform1fv(prog, name, count, v1) {\
+#define gpu_param1fv(prog, name, count, v1) {\
 	GLuint l = glGetUniformLocation(prog, name);\
 	glUniform1fv(l, count, v1);\
 }
-#define coUniform2fv(prog, name, count, v1) {\
+#define gpu_param2fv(prog, name, count, v1) {\
 	GLuint l = glGetUniformLocation(prog, name);\
 	glUniform2fv(l, count, v1);\
 }
-#define coUniform4fv(prog, name, count, v1) {\
+#define gpu_param4fv(prog, name, count, v1) {\
 	GLuint l = glGetUniformLocation(prog, name);\
 	glUniform4fv(l, count, v1);\
 }
-#define coUniformMatrix3fv(prog, name, v) {\
+#define gpu_paramMatrix3fv(prog, name, v) {\
 	GLuint l = glGetUniformLocation(prog, name);\
 	glUniformMatrix3fv(l, 1, GL_FALSE, v);\
 }
 
 #ifndef GPGPU_USE_GLES
-#define coTransferData(texture, x, y, w, h, type, pix) {\
+#define gpu_transfer(texture, x, y, w, h, type, pix) {\
 	glBindTexture(GL_TEXTURE_2D, texture);\
 	glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, GL_RGBA, type, pix);\
 	assert(!glGetError());\
 	glBindTexture(GL_TEXTURE_2D, 0);\
 }
 #else
-#define coTransferData(texture, x, y, w, h, type, pix) {\
+#define gpu_transfer(texture, x, y, w, h, type, pix) {\
 	glBindTexture(GL_TEXTURE_2D, texture);\
 	glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, GL_RGBA, type, pix);\
 	assert(!glGetError());\
@@ -342,7 +352,7 @@ float *coReadDataf(int N, int M, float *d)
 #endif
 
 #ifndef GPGPU_USE_GLES
-void coInit()
+void gpu_init()
 {
 	if (!glfwInit()) {
 		printf("Can't initialize GLFW.\n");
@@ -394,7 +404,7 @@ void coInit()
 	printf("  Max texture size: %d (%d)\n", max_texture_size, max_texture_width*8);
 }
 
-void coTerm()
+void gpu_term()
 {
 	glfwTerminate();
 }
@@ -406,7 +416,7 @@ struct gbm_device *__gbm;
 EGLDisplay __egl_dpy;
 EGLContext __core_ctx;
 
-void coInit()
+void gpu_init()
 {
 	/*bool*/int res;
 	int32_t __fd = open("/dev/dri/renderD128", O_RDWR);
@@ -450,7 +460,7 @@ void coInit()
 	assert(res);
 }
 
-void coTerm()
+void gpu_term()
 {
 	eglDestroyContext(__egl_dpy, __core_ctx);
 	eglTerminate(__egl_dpy);
