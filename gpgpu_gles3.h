@@ -198,6 +198,14 @@ void gpu_init()
 	}
 #endif
 	printf("%s: OpenGL %s\n", glGetString(GL_RENDERER), glGetString(GL_VERSION));
+
+	int value[4] = { 0 };
+//	#define GL_TOTAL_PHYSICAL_MEMORY_ATI 0x87FE
+//	glGetIntegerv(GL_TOTAL_PHYSICAL_MEMORY_ATI, value);
+	//glGetIntegerv(GL_VBO_FREE_MEMORY_ATI, value); //GL_TEXTURE_FREE_MEMORY_ATI,GL_RENDERBUFFER_FREE_MEMORY_ATI
+	//printf("  Total available memory: %d MB\n", value[2]/1024);
+	glGetIntegerv(GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX, value); //GL_GPU_MEMORY_INFO_DEDICATED_VIDMEM_NVX,GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX
+	printf("  Total available memory: %d MB\n", value[0]/1024);
 }
 void gpu_term()
 {

@@ -43,7 +43,8 @@ out vec4 result;
 void main() {
   ivec2 A_size = textureSize(A, 0);
   int commonDim = A_size[0];
-  int w = int(gl_FragCoord.x) * 4;
+  //int w = int(gl_FragCoord.x) * 4;
+  int w = int(gl_FragCoord.x);
   vec4 sum0 = vec4(0.0);
   vec4 sum1 = vec4(0.0);
   vec4 sum2 = vec4(0.0);
@@ -51,9 +52,12 @@ void main() {
   for (int i=0; i<commonDim; ++i) {
     vec4 a = texelFetch(A, ivec2(i, 0), 0);
     vec4 b0 = texelFetch(B, ivec2(i, w), 0);
-    vec4 b1 = texelFetch(B, ivec2(i, w+1), 0);
+    /*vec4 b1 = texelFetch(B, ivec2(i, w+1), 0);
     vec4 b2 = texelFetch(B, ivec2(i, w+2), 0);
-    vec4 b3 = texelFetch(B, ivec2(i, w+3), 0);
+    vec4 b3 = texelFetch(B, ivec2(i, w+3), 0);*/
+    vec4 b1 = texelFetch(B, ivec2(i+commonDim, w), 0);
+    vec4 b2 = texelFetch(B, ivec2(i+commonDim*2, w), 0);
+    vec4 b3 = texelFetch(B, ivec2(i+commonDim*3, w), 0);
     sum0 += a * b0;
     sum1 += a * b1;
     sum2 += a * b2;
@@ -73,7 +77,8 @@ static void matmul_gpu(float* __restrict xout, void* __restrict _x, void* __rest
 	int dd = d/4;
 	coBindVertices(gpu_prog_matmul);
 	GLuint texture0 = coCreateDataTexture(nn, 1, x, GLES_FLOAT, GPGPU_TEX_PADDING);
-	GLuint texture1 = coCreateDataTexture(nn, d, w, GLES_FLOAT, GPGPU_TEX_PADDING);
+//	GLuint texture1 = coCreateDataTexture(nn, d, w, GLES_FLOAT, GPGPU_TEX_PADDING);
+	GLuint texture1 = coCreateDataTexture(n, dd, w, GLES_FLOAT, GPGPU_TEX_PADDING);
 	GLuint texture2 = coCreateDataTexture(dd, 1, 0, GLES_FLOAT, 0);
 	coBindInputTexture(gpu_prog_matmul, texture0, GL_TEXTURE0, "A");
 	coBindInputTexture(gpu_prog_matmul, texture1, GL_TEXTURE1, "B");
@@ -89,6 +94,9 @@ static void matmul_gpu(float* __restrict xout, void* __restrict _x, void* __rest
 #endif
 	coReadDataf(dd, 1, xout);
 
+/*	coUnbindInputTexture(texture0);
+	coUnbindInputTexture(texture1);
+	coUnbindInputTexture(texture2);*/
 	glDeleteTextures(1, &texture0);
 	glDeleteTextures(1, &texture1);
 	glDeleteTextures(1, &texture2);
@@ -145,13 +153,10 @@ void run(int m, int n, int k, float *x, float *y, float *o, void (*gemm)(const i
 	printf("  %s elapsed time: %f ms, %f GFlops\n", name, mtime, ((float)REPEAT*2*m*n*k)/(mtime*1e6));
 }
 
-/*const int n = 960;
-//const int n = 1920;
-//const int n = 2880;
-const int m = n;
-const int k = n;*/
-
+// 960, 1920, 2880
 const int n = 1;
+//const int m = 32000;
+//const int k = 288;
 const int m = 11008;
 const int k = 4096;
 //const int m = 16;

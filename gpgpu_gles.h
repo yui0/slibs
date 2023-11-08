@@ -195,12 +195,15 @@ GLuint coCreateDataTexture(int w, int h, void *texels, GLuint type, int flag)
 	GLuint texture;
 	glGenTextures(1, &texture);
 	glBindTexture(GL_TEXTURE_2D, texture);
+	GPU_CHECK();
 
 #ifndef GPGPU_USE_GLES
 	glTexImage2D(GL_TEXTURE_2D, 0, (type==GLES_FLOAT ? GL_RGBA32F : GL_RGBA), w, h, 0, GL_RGBA, type, texels);
 #else
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, type, texels);
 #endif
+//	debug("coCreateDataTexture: %d, %d\n", w, h);
+	GPU_CHECK();
 
 #ifndef EMSCRIPTEN
 /*	GLuint clamp = GL_CLAMP_TO_EDGE;
@@ -376,11 +379,19 @@ void coInit()
 #endif
 	printf("%s: OpenGL %s\n", glGetString(GL_RENDERER), glGetString(GL_VERSION));
 
+	int value[4] = { 0 };
+//	#define GL_TOTAL_PHYSICAL_MEMORY_ATI 0x87FE
+//	glGetIntegerv(GL_TOTAL_PHYSICAL_MEMORY_ATI, value);
+	//glGetIntegerv(GL_VBO_FREE_MEMORY_ATI, value); //GL_TEXTURE_FREE_MEMORY_ATI,GL_RENDERBUFFER_FREE_MEMORY_ATI
+	//printf("    Total available memory: %d MB\n", value[2]/1024);
+	glGetIntegerv(GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX, value); //GL_GPU_MEMORY_INFO_DEDICATED_VIDMEM_NVX,GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX
+	printf("  Total available memory: %d MB\n", value[0]/1024);
+
 	int max_texture_width = 0;
 	glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_width);
 	max_texture_width /= 8;
 	int max_texture_size = max_texture_width * max_texture_width;
-	printf("max_texture_size: %d (%d)\n", max_texture_size, max_texture_width*8);
+	printf("  Max texture size: %d (%d)\n", max_texture_size, max_texture_width*8);
 }
 
 void coTerm()

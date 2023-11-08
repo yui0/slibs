@@ -59,7 +59,7 @@
 | **[sgemm_ocl.h](sgemm_ocl.h)**                                        | public domain        |   662 | [Fast GEMM function for OpenCL](https://github.com/yui0/ugemm)
 | **[sgemm_gl.h](sgemm_gl.h)**                                          | public domain        |   110 | [Fast GEMM function for OpenGL4](https://github.com/yui0/ugemm)
 | **[gpgpu_glsl.h](gpgpu_glsl.h)**                                      | public domain        |   399 | [GLSL frameworks](https://github.com/yui0/waifu2x-glsl)
-| **[gpgpu_gles.h](gpgpu_gles.h)**                                      | public domain        |   443 | <details><summary>GLES 3.0 frameworks</summary>[Example](gpgpu_gles_matmul.c)</details>
+| **[gpgpu_gles.h](gpgpu_gles.h)**                                      | public domain        |   443 | <details><summary>GLES 3.0 frameworks</summary>[Matmul example](gpgpu_gles_matmul.c),[LLM example](https://github.com/yui0/catseye/tree/master/llm)</details>
 | **[gpgpu_gles3.h](gpgpu_gles3.h)**                                    | public domain        |   264 | GLES 3.0 frameworks with TransformFeedback
 | **[gpgpu_gl4.h](gpgpu_gl4.h)**                                        | public domain        |   170 | [OpenGL compute shader frameworks](https://github.com/yui0/waifu2x-glsl)
 | **[ocl.h](ocl.h)**                                                    | public domain        |   190 | [OpenCL frameworks](https://github.com/yui0/waifu2x-ocl)
