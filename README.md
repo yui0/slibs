@@ -79,6 +79,7 @@
 | **[aimage.h](aimage.h)**                                              | public domain        |   321 | Image Viewer for Console
 | **[mcurses.h](mcurses.h)**                                            | GPL-2                |  1481 | <details><summary>"[mcurses](https://github.com/ChrisMicro/mcurses)" is a minimized version of programming library ncurses</summary>[ref.](https://github.com/yui0/aplay-)</details>
 | **[termbox.h](termbox.h)**                                            | MIT                  |  1719 | <details><summary>Library for writing text-based user interfaces</summary>[ref.](https://github.com/nsf/termbox)</details>
+| **[qrcodegen.h](qrcodegen.h)**                                        | MIT                  |  1413 | QR Code generator library
 
 ## 📝 parser
 | library                                                               | license              |  LoC  | description
