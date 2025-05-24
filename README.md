@@ -23,6 +23,7 @@
 | **[wav.h](wav.h)**                                                    | public domain        |    61 | Wave format
 | **[wave.h](wave.h)**                                                  | public domain        |   304 | utility for wave format
 | **[minimp3.h](minimp3.h)**                                            | LGPL                 |  2671 | [MP3 decoder](https://oldforum.puppylinux.com/viewtopic.php?t=59417)
+| **[adpcm.h](adpcm.h)**                                                | public domain        |   320 | ADPCM
 
 ## 🎥 video
 | library                                                               | license              |  LoC  | description
