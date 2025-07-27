@@ -1,5 +1,5 @@
 /* public domain Simple, Minimalistic, making list of files and directories
- *	©2017-2023 Yuichiro Nakada
+ *	©2017-2025 Yuichiro Nakada
  *
  * Basic usage:
  *	int num;
@@ -177,10 +177,12 @@ LS_LIST *ls_dir(char *_dir, int flag, int *num)
 #else
 		srand(time(NULL));
 #endif
-		for (int i=n-1; i>=0; i--) { // Fisher-Yates shuffle
+		for (int i=n-1; i>0; i--) { // Fisher-Yates shuffle
 #ifdef RANDOM_H
 //			int a = frand() * n;
-			int a = (urandom_number() / 4294967295.0)*n;
+//			int a = (prand32() / 4294967295.0)*n;
+			uint32_t r = urandom_number();
+			int a = r % (i + 1); // Ensure a is in range [0, i]
 #else
 			int a = (rand() / RAND_MAX)*n;
 #endif

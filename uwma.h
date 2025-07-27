@@ -1,5 +1,5 @@
 /* public domain Simple, Minimalistic, WMA decoder based on libwma
- *	©2018 Yuichiro Nakada
+ *	©2018,2025 Yuichiro Nakada
  *
  * Basic usage:
  *	uwma_decode("music.flac", pcm, len, 44100, 16, 2, 9);
@@ -5023,11 +5023,16 @@ static int parse_wma_header(unsigned char* data, int len, CodecContext *cc) {
             cc->block_align = data[i+12] | (data[i+13] << 8);
             
             // Extradataも設定
-            if (cc->codec_id == CODEC_ID_WMAV2 && (i + 24 <= len)) {
-                 cc->extradata_size = data[i+18] | (data[i+19] << 8);
-                 if (cc->extradata_size == 6 && (i + 24 <= len)) {
-                    cc->extradata = &data[i+20];
-                 }
+            if (cc->codec_id == CODEC_ID_WMAV2) {
+                // Check if there are enough bytes to read the size field (cbSize)
+                if (i + 20 <= len) {
+                    uint16_t cbSize = data[i+18] | (data[i+19] << 8);
+                    // Check if the actual extradata is within the file bounds
+                    if (cbSize > 0 && (i + 20 + cbSize <= len)) {
+                        cc->extradata = &data[i+20];
+                        cc->extradata_size = cbSize;
+                    }
+                }
             }
             
             // 妥当な値かチェック
