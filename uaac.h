@@ -13373,81 +13373,238 @@ printf("type:%x/%x\n",type, ATOM_soun);
 	return firstChunk;
 }
 #endif
-uint8_t *uaac_extract_aac(int fd, int *len, int *samplerate, int *channels)
+uint8_t *uaac_extract_aac(int fd, int *len, int *samplerate, int *channels, int *profile_out)
 {
-	_ATOM ftyp = uaac_findMp4Atom("ftyp", 0, 0, fd);
-	if (!ftyp.size) return 0; // no mp4/m4a file
+    _ATOM ftyp = uaac_findMp4Atom("ftyp", 0, 0, fd);
+    if (!ftyp.size) {
+        printf("Error: Not an MP4/M4A file\n");
+        return NULL;
+    }
 
-	// go through the boxes to find the interesting atoms:
-	uint32_t moov = uaac_findMp4Atom("moov", 0, 1, fd).pos;
-	uint32_t mdia;
-	for (int i=0; i<10; i++) {
-		_ATOM trak = uaac_findMp4Atom("trak", moov + 8, 1, fd);
-		mdia = uaac_findMp4Atom("mdia", trak.pos + 8, 1, fd).pos;
+    uint32_t moov = uaac_findMp4Atom("moov", 0, 1, fd).pos;
+    if (!moov) {
+        printf("Error: No 'moov' atom found\n");
+        return NULL;
+    }
 
-		uint32_t hdlr = uaac_findMp4Atom("hdlr", mdia + 8, 1, fd).pos;
-		uint32_t type = uaac_read32(hdlr + 8 + 0x08, fd);
+    uint32_t mdia = 0;
+    for (int i = 0; i < 10; i++) {
+        _ATOM trak = uaac_findMp4Atom("trak", moov + 8, 1, fd);
+        if (!trak.pos) {
+            printf("Error: No 'trak' atom found\n");
+            return NULL;
+        }
+        mdia = uaac_findMp4Atom("mdia", trak.pos + 8, 1, fd).pos;
+        if (!mdia) {
+            printf("Error: No 'mdia' atom found\n");
+            return NULL;
+        }
 
-		if (type == ATOM_soun) break;
-//		if (!trak.pos) return 0; // error
-		moov = trak.pos + trak.size -8;
-		printf("type:%x/%x %x %x\n", type, ATOM_soun, trak.pos, moov);
-		if (!trak.pos) return 0; // error
-	}
+        uint32_t hdlr = uaac_findMp4Atom("hdlr", mdia + 8, 1, fd).pos;
+        if (!hdlr) {
+            printf("Error: No 'hdlr' atom found\n");
+            return NULL;
+        }
+        uint32_t type = uaac_read32(hdlr + 8 + 0x08, fd);
 
-	// determine duration:
-//	uint32_t mdhd = uaac_findMp4Atom("mdhd", mdia + 8, 1, fd).pos;
-//	uint32_t timescale = uaac_read32(mdhd + 8 + 0x0c, fd);
-//	unsigned int duration = 1000.0 * ((float)uaac_read32(mdhd + 8 + 0x10, fd) / (float)timescale);
+        if (type == ATOM_soun) break;
+        moov = trak.pos + trak.size - 8;
+        printf("type:%x/%x %x %x\n", type, ATOM_soun, trak.pos, moov);
+        if (i == 9) {
+            printf("Error: No audio track found\n");
+            return NULL;
+        }
+    }
 
-	// MP4-data has no aac-frames, so we have to set the parameters by hand.
-	uint32_t minf = uaac_findMp4Atom("minf", mdia + 8, 1, fd).pos;
-	uint32_t stbl = uaac_findMp4Atom("stbl", minf + 8, 1, fd).pos;
-	// stsd sample description box: - infos to parametrize the decoder
-	_ATOM stsd = uaac_findMp4Atom("stsd", stbl + 8, 1, fd);
-	if (!stsd.size) return 0; // something is not ok
+    uint32_t minf = uaac_findMp4Atom("minf", mdia + 8, 1, fd).pos;
+    if (!minf) {
+        printf("Error: No 'minf' atom found\n");
+        return NULL;
+    }
+    uint32_t stbl = uaac_findMp4Atom("stbl", minf + 8, 1, fd).pos;
+    if (!stbl) {
+        printf("Error: No 'stbl' atom found\n");
+        return NULL;
+    }
 
-	*channels = uaac_read16(stsd.pos + 8 + 0x20, fd);
-	//uint16_t bits = uaac_read16(stsd.pos + 8 + 0x22); // not used
-	*samplerate = uaac_read32(stsd.pos + 8 + 0x26, fd);
+    _ATOM stsd = uaac_findMp4Atom("stsd", stbl + 8, 1, fd);
+    if (!stsd.size) {
+        printf("Error: No 'stsd' atom found\n");
+        return NULL;
+    }
 
-	// stco - chunk offset atom:
-	uint32_t stco = uaac_findMp4Atom("stco", stbl + 8, 1, fd).pos;
+    *channels = uaac_read16(stsd.pos + 8 + 0x20, fd);
+    uint32_t raw_samplerate = uaac_read32(stsd.pos + 8 + 0x28, fd);
+    *samplerate = raw_samplerate >> 16; // 16.16 fixed-point to integer
+    if (*samplerate == 0) {
+        printf("Error: Invalid samplerate in stsd\n");
+        return NULL;
+    }
 
-	// number of chunks:
-	uint32_t nChunks = uaac_read32(stco + 8 + 0x04, fd);
+    int sbr_enabled = 0;
+    int output_samplerate = *samplerate;
+    int audioObjectType = 0;
+    _ATOM esds = uaac_findMp4Atom("esds", stsd.pos + 8 + 0x2C, 1, fd);
+    if (esds.size > 0) {
+        unsigned char esdsData[esds.size - 8];
+        lseek(fd, esds.pos + 8, SEEK_SET);
+        read(fd, esdsData, esds.size - 8);
 
-	uint32_t pos[nChunks];
-	uint32_t size[nChunks];
-	uint32_t stsz = uaac_findMp4Atom("stsz", stbl + 8, 1, fd).pos;
-	uint32_t stsc = uaac_findMp4Atom("stsc", stbl + 8, 1, fd).pos;
-	int samplesPerChunk = uaac_read32(stsc +8+4 +8, fd);
-	if (samplesPerChunk>65535) {
-		printf("error at samplesPerChunk:%d\n", samplesPerChunk);
-		return 0; // something is bad
-	}
-	int c = 0;
-	for (int i=0; i<nChunks-1; i++) {
-		size[i] = 0;
-		for (int j=0; j<samplesPerChunk; j++) {
-			size[i] += uaac_read32(stsz +8+12 +(i*samplesPerChunk+j)*4, fd);
-		}
-		c += size[i];
-		pos[i] = uaac_read32(stco +8+8 +i*4, fd);
-//		printf(" %d", c);
-	}
-//	printf("samplesPerChunk:%d dataSize:%d\n", samplesPerChunk, c);
-	if (uaac_findMp4Atom("mdat", 0, 1, fd).size < c) return 0; // size is not ok
+        int offset = 0;
+        while (offset < esds.size - 8) {
+            int tag = esdsData[offset++];
+            if (tag == 0x05) { // DecoderSpecificInfo
+                int size = 0;
+                while (esdsData[offset] & 0x80) {
+                    size = (size << 7) | (esdsData[offset++] & 0x7F);
+                }
+                size = (size << 7) | (esdsData[offset++] & 0x7F);
 
-	*len = c;
-	uint8_t *data = (uint8_t*)malloc(c);
-	if (!data) return 0; // memory error!
-	uint8_t *p = data;
-	for (int i=0; i<nChunks-1; i++) {
-		lseek(fd, pos[i], SEEK_SET);
-		read(fd, p, size[i]);
-		p += size[i];
-	}
+                unsigned char asc[64];
+                if (size > sizeof(asc)) {
+                    printf("Error: ASC size too large (%d)\n", size);
+                    return NULL;
+                }
+                memcpy(asc, esdsData + offset, size);
 
-	return data;
+                // Parse ASC
+                int bitPos = 0;
+                /*int*/ audioObjectType = (asc[0] >> 3); // First 5 bits
+                bitPos += 5;
+                int sfIndex = ((asc[0] & 0x07) << 1) | ((asc[1] >> 7) & 0x01);
+                bitPos += 4;
+                const int sfTable[16] = {96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350, 0, 0, 0};
+                if (sfIndex < 13) { // Valid index
+                    *samplerate = sfTable[sfIndex];
+                    output_samplerate = *samplerate;
+                }
+                int chans = ((asc[1] >> 3) & 0x0F); // Channel config
+                if (chans > 0 && chans <= 7) *channels = chans; // Override if valid
+
+                if (audioObjectType == 5 && size >= 2) { // HE-AAC with SBR
+                    sbr_enabled = 1;
+                    output_samplerate *= 2;
+                    printf("Detected HE-AAC with SBR, output samplerate: %uHz\n", output_samplerate);
+                }
+                break;
+            }
+            int size = 0;
+            while (offset < esds.size - 8 && esdsData[offset] & 0x80) {
+                size = (size << 7) | (esdsData[offset++] & 0x7F);
+            }
+            if (offset >= esds.size - 8) break;
+            size = (size << 7) | (esdsData[offset++] & 0x7F);
+            offset += size;
+        }
+    } else {
+        printf("Warning: No 'esds' atom found, assuming AAC-LC\n");
+    }
+
+    uint32_t stco = uaac_findMp4Atom("stco", stbl + 8, 1, fd).pos;
+    if (!stco) {
+        printf("Error: No 'stco' atom found\n");
+        return NULL;
+    }
+
+    uint32_t nChunks = uaac_read32(stco + 8 + 0x04, fd);
+    if (nChunks == 0) {
+        printf("Error: No chunks found in 'stco'\n");
+        return NULL;
+    }
+
+    uint32_t stsz = uaac_findMp4Atom("stsz", stbl + 8, 1, fd).pos;
+    if (!stsz) {
+        printf("Error: No 'stsz' atom found\n");
+        return NULL;
+    }
+    uint32_t stsc = uaac_findMp4Atom("stsc", stbl + 8, 1, fd).pos;
+    if (!stsc) {
+        printf("Error: No 'stsc' atom found\n");
+        return NULL;
+    }
+
+    uint32_t nEntries = uaac_read32(stsc + 8 + 0x04, fd);
+    uint32_t total_samples = uaac_read32(stsz + 8 + 0x08, fd);
+    if (nEntries == 0 || total_samples == 0) {
+        printf("Error: Invalid 'stsc' or 'stsz' data\n");
+        return NULL;
+    }
+
+    typedef struct {
+        uint32_t first_chunk;
+        uint32_t samples_per_chunk;
+        uint32_t sample_description_index;
+    } StscEntry;
+    StscEntry *stsc_entries = (StscEntry *)malloc(nEntries * sizeof(StscEntry));
+    if (!stsc_entries) {
+        printf("Error: Memory allocation for stsc entries failed\n");
+        return NULL;
+    }
+    lseek(fd, stsc + 8 + 8, SEEK_SET);
+    for (int i = 0; i < nEntries; i++) {
+        stsc_entries[i].first_chunk = uaac_read32(stsc + 8 + 8 + i * 12, fd);
+        stsc_entries[i].samples_per_chunk = uaac_read32(stsc + 8 + 12 + i * 12, fd);
+        stsc_entries[i].sample_description_index = uaac_read32(stsc + 8 + 16 + i * 12, fd);
+    }
+
+    uint32_t *pos = (uint32_t *)malloc(nChunks * sizeof(uint32_t));
+    uint32_t *size = (uint32_t *)malloc(nChunks * sizeof(uint32_t));
+    if (!pos || !size) {
+        printf("Error: Memory allocation for chunk data failed\n");
+        free(stsc_entries);
+        free(pos);
+        free(size);
+        return NULL;
+    }
+    int c = 0;
+    int sample_index = 0;
+    int chunk_index = 0;
+    for (int i = 0; i < nEntries && chunk_index < nChunks; i++) {
+        uint32_t next_first_chunk = (i + 1 < nEntries) ? stsc_entries[i + 1].first_chunk : nChunks + 1;
+        for (uint32_t chunk = stsc_entries[i].first_chunk; chunk < next_first_chunk && chunk_index < nChunks; chunk++, chunk_index++) {
+            size[chunk_index] = 0;
+            for (int j = 0; j < stsc_entries[i].samples_per_chunk && sample_index < total_samples; j++, sample_index++) {
+                size[chunk_index] += uaac_read32(stsz + 8 + 12 + sample_index * 4, fd);
+            }
+            c += size[chunk_index];
+            pos[chunk_index] = uaac_read32(stco + 8 + 8 + chunk_index * 4, fd);
+        }
+    }
+    free(stsc_entries);
+
+    _ATOM mdat = uaac_findMp4Atom("mdat", 0, 1, fd);
+    if (!mdat.size || mdat.size < c) {
+        printf("Error: 'mdat' size too small (%u < %d)\n", mdat.size, c);
+        free(pos);
+        free(size);
+        return NULL;
+    }
+
+    *len = c;
+    uint8_t *data = (uint8_t *)malloc(c);
+    if (!data) {
+        printf("Error: Memory allocation failed for %d bytes\n", c);
+        free(pos);
+        free(size);
+        return NULL;
+    }
+    uint8_t *p = data;
+    for (int i = 0; i < nChunks; i++) {
+        lseek(fd, pos[i], SEEK_SET);
+        read(fd, p, size[i]);
+        p += size[i];
+    }
+    free(pos);
+    free(size);
+
+    *profile_out = AAC_PROFILE_LC;  // Default
+    if (audioObjectType == 5) {
+        sbr_enabled = 1;
+        output_samplerate *= 2;
+        *profile_out = 5;  // HE-AAC
+        printf("Detected HE-AAC with SBR, core samplerate: %uHz, output: %uHz\n", *samplerate, output_samplerate);
+    } else {
+        printf("Extracted AAC: %uHz, %dch\n", *samplerate, *channels);
+    }
+    return data;
 }
