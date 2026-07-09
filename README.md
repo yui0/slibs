@@ -3,6 +3,7 @@
 ![GitHub Repo stars](https://img.shields.io/github/stars/yui0/slibs?style=social)
 ![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/yui0/slibs)
 ![Lines of code](https://img.shields.io/tokei/lines/github/yui0/slibs)
+[![Sponsor](https://img.shields.io/badge/Sponsor%20this%20project-%E2%9D%A4%EF%B8%8F-white?logo=githubsponsors&logoColor=EA4AAA&labelColor=EA4AAA)](https://github.com/sponsors/yui0)
 
 🐱 Single file libraries for C/C++.
 
@@ -92,6 +93,7 @@
 | **[parg.h](parg.h)**                                                  | CC0                  |   551 | <details><summary>Parser for argv that works similarly to getopt</summary>[ref.](https://github.com/jibsen/parg)</details>
 | **[parson.h](parson.h)**                                              | MIT                  |  2239 | <details><summary>Lightweight JSON library</summary>[ref.](https://github.com/kgabis/parson)</details>
 | **[utf8.h](utf8.h)**                                                  | GPL2                 |  1123 | <details><summary>UTF8 decoder and encoder library</summary>[ref.](http://www.ne.jp/asahi/maoyam/hp/UTF-8)</details>
+| **[cssparser.h](cssparser.h)**                                        | MPL-2.0              |  ~850 | <details><summary>CSS (+ HTML) Parser</summary>Hand-written recursive descent parser. Supports CSS2.1 + common CSS3 features, @rules, selectors (including attribute/pseudo), specificity calculation, callback (SAX) mode, and HTML `<style>` + `style=""` extraction.</details>
 
 ## 📖 References
 - [A single-header ANSI C gui library](https://github.com/vurtun/nuklear)
