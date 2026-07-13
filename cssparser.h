@@ -133,6 +133,9 @@ typedef struct {
     /* error info */
     int        error_count;
     char       last_error[256];
+    /* CSS custom properties from :root / any rule */
+    struct { char name[64]; char value[1024]; } custom_props[128];
+    int custom_prop_count;
 } CSSStyleSheet;
 
 /* ── Callback-based (SAX-style) API ──────────────────────────────────── */
@@ -164,6 +167,9 @@ const CSSDeclaration *css_find_decl(const CSSRule *rule, const char *property);
 
 /* Debug */
 void css_dump(const CSSStyleSheet *sheet, FILE *fp);
+
+/* Resolve var(--name) references in all declarations using collected custom props */
+void css_resolve_vars(CSSStyleSheet *sheet);
 
 #endif /* CSSPARSER_H */
 
@@ -833,6 +839,151 @@ static void parse_stylesheet_inner(Lexer *l, CSSStyleSheet *sheet, CSSCallbacks 
     }
 }
 
+/* ── CSS custom property resolver ───────────────────────────────── */
+
+static void css_collect_custom_props(CSSStyleSheet *sheet) {
+    sheet->custom_prop_count = 0;
+    /* Pass 1: collect all --name: value declarations */
+    for (int ri = 0; ri < sheet->rule_count; ri++) {
+        CSSRule *rule = &sheet->rules[ri];
+        for (int di = 0; di < rule->decl_count; di++) {
+            const char *prop = rule->decls[di].property;
+            if (prop[0] == '-' && prop[1] == '-') {
+                int found = 0;
+                for (int ci = 0; ci < sheet->custom_prop_count; ci++) {
+                    if (strcmp(sheet->custom_props[ci].name, prop) == 0) {
+                        strncpy(sheet->custom_props[ci].value, rule->decls[di].value, 1023);
+                        sheet->custom_props[ci].value[1023] = '\0';
+                        found = 1; break;
+                    }
+                }
+                if (!found && sheet->custom_prop_count < 128) {
+                    strncpy(sheet->custom_props[sheet->custom_prop_count].name, prop, 63);
+                    sheet->custom_props[sheet->custom_prop_count].name[63] = '\0';
+                    strncpy(sheet->custom_props[sheet->custom_prop_count].value, rule->decls[di].value, 1023);
+                    sheet->custom_props[sheet->custom_prop_count].value[1023] = '\0';
+                    sheet->custom_prop_count++;
+                }
+            }
+        }
+    }
+    /* Also check nested (at-rule) rules */
+    for (int ai = 0; ai < sheet->at_rule_count; ai++) {
+        CSSAtRule *at = &sheet->at_rules[ai];
+        for (int ri2 = 0; ri2 < at->nested_rule_count; ri2++) {
+            CSSRule *rule = &at->nested_rules[ri2];
+            for (int di = 0; di < rule->decl_count; di++) {
+                const char *prop = rule->decls[di].property;
+                if (prop[0] == '-' && prop[1] == '-') {
+                    int found = 0;
+                    for (int ci = 0; ci < sheet->custom_prop_count; ci++) {
+                        if (strcmp(sheet->custom_props[ci].name, prop) == 0) {
+                            strncpy(sheet->custom_props[ci].value, rule->decls[di].value, 1023);
+                            found = 1; break;
+                        }
+                    }
+                    if (!found && sheet->custom_prop_count < 128) {
+                        strncpy(sheet->custom_props[sheet->custom_prop_count].name, prop, 63);
+                        sheet->custom_props[sheet->custom_prop_count].name[63] = '\0';
+                        strncpy(sheet->custom_props[sheet->custom_prop_count].value, rule->decls[di].value, 1023);
+                        sheet->custom_prop_count++;
+                    }
+                }
+            }
+        }
+    }
+}
+
+static void resolve_var_in_value(const CSSStyleSheet *sheet, char *value, int maxlen) {
+    if (!strstr(value, "var(")) return;
+    char out[1024] = {0};
+    size_t oi = 0;
+    const char *p = value;
+    while (*p && oi < (size_t)(maxlen - 1)) {
+        if (strncmp(p, "var(", 4) == 0) {
+            const char *ns = p + 4;
+            while (*ns == ' ') ns++;
+            const char *ne = ns;
+            while (*ne && *ne != ',' && *ne != ')') ne++;
+            char vname[64] = {0};
+            int nl = (int)(ne - ns);
+            if (nl > 63) nl = 63;
+            strncpy(vname, ns, nl);
+            /* trim trailing spaces */
+            int vl = (int)strlen(vname);
+            while (vl > 0 && vname[vl-1] == ' ') vname[--vl] = '\0';
+            /* find value */
+            const char *found = NULL;
+            for (int i = 0; i < sheet->custom_prop_count; i++) {
+                if (strcmp(sheet->custom_props[i].name, vname) == 0) {
+                    found = sheet->custom_props[i].value; break;
+                }
+            }
+            /* skip to closing paren */
+            int depth = 1; p += 4;
+            const char *fallback = NULL;
+            while (*p && depth > 0) {
+                if (*p == '(') depth++;
+                else if (*p == ')') { depth--; if (depth == 0) break; }
+                else if (*p == ',' && depth == 1 && !fallback) fallback = p + 1;
+                p++;
+            }
+            if (*p == ')') p++;
+            if (found) {
+                size_t fl = strlen(found);
+                if (oi + fl >= (size_t)(maxlen - 1)) fl = (size_t)(maxlen - 1) - oi;
+                memcpy(out + oi, found, fl);
+                oi += fl;
+            } else if (fallback) {
+                /* use fallback: trim and copy */
+                const char *fb = fallback;
+                while (*fb == ' ') fb++;
+                /* end is at p (char after the ')' we already skipped) */
+                size_t fbl = (size_t)(p - 1 - fallback); /* approx */
+                if (fbl > 0 && fbl < 511) {
+                    char fbbuf[512] = {0};
+                    strncpy(fbbuf, fallback, fbl); fbbuf[fbl] = '\0';
+                    /* basic trim */
+                    int ftl = (int)strlen(fbbuf);
+                    while (ftl > 0 && (fbbuf[ftl-1] == ')' || fbbuf[ftl-1] == ' ')) fbbuf[--ftl] = '\0';
+                    size_t rfl = strlen(fbbuf);
+                    if (oi + rfl >= (size_t)(maxlen - 1)) rfl = (size_t)(maxlen - 1) - oi;
+                    memcpy(out + oi, fbbuf, rfl);
+                    oi += rfl;
+                }
+            }
+        } else {
+            out[oi++] = *p++;
+        }
+    }
+    out[oi] = '\0';
+    strncpy(value, out, (size_t)(maxlen - 1));
+    value[maxlen - 1] = '\0';
+}
+
+void css_resolve_vars(CSSStyleSheet *sheet) {
+    if (!sheet) return;
+    css_collect_custom_props(sheet);
+    /* Pass 2: resolve var() in all non-custom declarations */
+    for (int ri = 0; ri < sheet->rule_count; ri++) {
+        CSSRule *rule = &sheet->rules[ri];
+        for (int di = 0; di < rule->decl_count; di++) {
+            if (rule->decls[di].property[0] == '-' && rule->decls[di].property[1] == '-') continue;
+            resolve_var_in_value(sheet, rule->decls[di].value, CSS_MAX_VALUE);
+        }
+    }
+    for (int ai = 0; ai < sheet->at_rule_count; ai++) {
+        CSSAtRule *at = &sheet->at_rules[ai];
+        for (int ri2 = 0; ri2 < at->nested_rule_count; ri2++) {
+            CSSRule *rule = &at->nested_rules[ri2];
+            for (int di = 0; di < rule->decl_count; di++) {
+                if (rule->decls[di].property[0] == '-' && rule->decls[di].property[1] == '-') continue;
+                resolve_var_in_value(sheet, rule->decls[di].value, CSS_MAX_VALUE);
+            }
+        }
+    }
+}
+
 /* ── Public DOM API ──────────────────────────────────────────────────── */
 
 CSSStyleSheet *css_parse(const char *text, size_t len) {
@@ -842,6 +993,7 @@ CSSStyleSheet *css_parse(const char *text, size_t len) {
     Lexer l;
     lex_init(&l, text, len);
     parse_stylesheet_inner(&l, sheet, NULL);
+    css_resolve_vars(sheet);
     return sheet;
 }
 
