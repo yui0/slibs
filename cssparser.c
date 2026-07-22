@@ -3,7 +3,7 @@
  *
  * Build:
  *   gcc -Wall -Wextra -o cssparser cssparser.c && ./cssparser
- *   gcc -Wall -Wextra -o cssparser cssparser.c && ./cssparser demo_style.css
+ *   gcc -Wall -Wextra -o cssparser cssparser.c && ./cssparser luna-ui.css
  */
 
 #define CSS_PARSER_IMPLEMENTATION
