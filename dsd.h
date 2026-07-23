@@ -1,12 +1,9 @@
 /*
 #include <stdio.h>
+#define DSD_DECODER_IMPLEMENTATION
 #include "dsd_decoder.h"
 
 int main() {
-    #define DSD_DECODER_IMPLEMENTATION
-    #include "dsd_decoder.h"
-
-    // DSFファイルの読み込み（例: ファイルから）
     FILE* file = fopen("sample.dsf", "rb");
     if (!file) {
         printf("Failed to open file\n");
@@ -28,7 +25,6 @@ int main() {
         return -1;
     }
 
-    // DSFデータロード
     if (dsd_decoder_load_dsf(decoder, data, size) != 0) {
         printf("Failed to load DSF data\n");
         dsd_decoder_free(decoder);
@@ -48,12 +44,10 @@ int main() {
     size_t pcm_size;
     const int32_t* pcm_data = dsd_decoder_get_pcm_data(decoder, &pcm_size);
 
-    // PCMデータ処理（例: ファイルに保存）
     FILE* out = fopen("output.pcm", "wb");
     fwrite(pcm_data, sizeof(int32_t), pcm_size, out);
     fclose(out);
 
-    // 解放
     dsd_decoder_free(decoder);
     free(data);
     return 0;
@@ -223,7 +217,7 @@ void dsd_decoder_free(DSDDecoder* decoder) {
     }
 }
 
-// RMS推定を実行する新しいヘルパー関数
+// RMS推定
 static void dsd_decoder_estimate_rms(DSDDecoder* decoder, int format) {
     if (decoder->initial_rms_estimation_done) return;
 
@@ -267,7 +261,8 @@ static void dsd_decoder_estimate_rms(DSDDecoder* decoder, int format) {
                     current_bit = k;
                 }
                 size_t byte_idx = current_bit / DSD_SAMPLES_PER_BYTE;
-                int bit_pos = 7 - (current_bit % DSD_SAMPLES_PER_BYTE);
+                //int bit_pos = 7 - (current_bit % DSD_SAMPLES_PER_BYTE);
+                int bit_pos = current_bit % DSD_SAMPLES_PER_BYTE;
                 double dsd_val = ((dsd_channel_data[byte_idx] >> bit_pos) & 1) ? 1.0 : -1.0;
 
                 double temp = dsd_val;
@@ -330,7 +325,6 @@ end_estimation_loop:
     dsd_load_next_block(decoder); // 最初のブロックを再ロード
 }
 
-
 size_t dsd_decoder_read_pcm_frames(DSDDecoder* decoder, size_t frames_to_read, void* buffer, int format) {
     if (!decoder || !buffer || frames_to_read == 0 || decoder->pcm_frames_processed >= decoder->totalPCMFrameCount) return 0;
 
@@ -347,14 +341,13 @@ size_t dsd_decoder_read_pcm_frames(DSDDecoder* decoder, size_t frames_to_read, v
     float* buffer_f32 = (float*)buffer;
     size_t block_size_bits = decoder->block_size_bytes * DSD_SAMPLES_PER_BYTE;
 
-    double scale = decoder->current_scale_factor / decimation_factor;
     double filtered[MAX_CHANNELS]; // 各チャンネルのフィルタ出力
     for (size_t i = 0; i < frames_to_read; ++i) {
         for (int ch = 0; ch < decoder->channels; ++ch) {
             const uint8_t* dsd_channel_data = decoder->block_buffer + (ch * decoder->block_size_bytes);
             size_t start_bit = decoder->current_dsd_bit_index;
 
-            int sum = 0;
+            double accum = 0.0;
             for (size_t k = 0; k < decimation_factor; ++k) {
                 size_t current_bit = start_bit + k;
                 if (current_bit >= block_size_bits) {
@@ -364,21 +357,23 @@ size_t dsd_decoder_read_pcm_frames(DSDDecoder* decoder, size_t frames_to_read, v
                     current_bit = k;
                 }
                 size_t byte_idx = current_bit / DSD_SAMPLES_PER_BYTE;
-                int bit_pos = 7 - (current_bit % DSD_SAMPLES_PER_BYTE);
+                int bit_pos = current_bit % DSD_SAMPLES_PER_BYTE; // DSF仕様: LSBファースト
 
-                sum += ((dsd_channel_data[byte_idx] >> bit_pos) & 1) ? 1 : 0;
+                double dsd_val = ((dsd_channel_data[byte_idx] >> bit_pos) & 1) ? 1.0 : -1.0;
+
+                // RMS推定時と同様に、1ビットごとにローパスフィルタを通してから平均化(間引き)する
+                double temp = dsd_val;
+                for (int stage = 0; stage < 4; ++stage) {
+                    temp = apply_filter2(&decoder->filter_state[ch][stage], &decoder->filter_coeff, temp);
+                }
+                accum += temp;
             }
 
-            //filtered[ch] = ((double)sum / decimation_factor)*2.0-1.0;
-            filtered[ch] = ((double)sum / decimation_factor)*decoder->current_scale_factor-decoder->current_scale_factor/2;
+            filtered[ch] = (accum / decimation_factor) * decoder->current_scale_factor;
         }
 
         // PCMバッファに書き込み
         for (int ch = 0; ch < decoder->channels; ++ch) {
-                /*double pcm_val = filtered[ch];
-                for (int stage = 0; stage < 4; ++stage) {
-                    pcm_val = apply_filter2(&decoder->filter_state[ch][stage], &decoder->filter_coeff, pcm_val);
-                }*/
             double pcm_val = filtered[ch];
             if (format == SND_PCM_FORMAT_FLOAT_LE) {
                 if (pcm_val > 1.0) pcm_val = 1.0;
