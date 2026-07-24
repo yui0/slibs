@@ -74,6 +74,13 @@ int main() {
 #define DSD_SAMPLES_PER_BYTE 8
 #define MAX_CHANNELS 2
 
+// Source container format. DSF (Sony) is little-endian, LSB-first within a
+// byte, and stores each channel's DSD bits in its own contiguous sub-block.
+// DFF/DSDIFF (Philips) is big-endian, MSB-first within a byte, and
+// interleaves channels byte-by-byte instead of block-by-block.
+#define DSD_FILE_DSF 0
+#define DSD_FILE_DFF 1
+
 // 2次フィルタの状態と係数を定義
 typedef struct {
     double x1, x2; // 入力の過去値
@@ -87,6 +94,7 @@ typedef struct {
 
 typedef struct {
     FILE* file;
+    int file_type; // DSD_FILE_DSF or DSD_FILE_DFF
     uint64_t dsd_data_offset;
     uint64_t totalPCMFrameCount;
     uint64_t pcm_frames_processed;
@@ -120,6 +128,45 @@ typedef struct {
 static uint32_t read_le32(const uint8_t* buf) { return (uint32_t)buf[0] | ((uint32_t)buf[1] << 8) | ((uint32_t)buf[2] << 16) | ((uint32_t)buf[3] << 24); }
 static uint64_t read_le64(const uint8_t* buf) { return (uint64_t)buf[0] | ((uint64_t)buf[1] << 8) | ((uint64_t)buf[2] << 16) | ((uint64_t)buf[3] << 24) | ((uint64_t)buf[4] << 32) | ((uint64_t)buf[5] << 40) | ((uint64_t)buf[6] << 48) | ((uint64_t)buf[7] << 56); }
 
+// DFF/DSDIFF chunk sizes and integers are big-endian.
+static uint32_t read_be32(const uint8_t* buf) { return ((uint32_t)buf[0] << 24) | ((uint32_t)buf[1] << 16) | ((uint32_t)buf[2] << 8) | (uint32_t)buf[3]; }
+static uint64_t read_be64(const uint8_t* buf) {
+    uint64_t v = 0;
+    for (int i = 0; i < 8; ++i) v = (v << 8) | (uint64_t)buf[i];
+    return v;
+}
+
+// DSD64/128/256 -> a common 176.4kHz PCM rate (decimation factor 16/32/64);
+// anything else falls back to a straight /32 decimation.
+static int dsd_choose_pcm_rate(int dsd_sample_rate) {
+    if (dsd_sample_rate == 2822400) return 176400;
+    if (dsd_sample_rate == 5644800) return 176400;
+    if (dsd_sample_rate == 11289600) return 176400;
+    return dsd_sample_rate / 32;
+}
+
+// Returns the DSD sample (+1.0 / -1.0) for channel `ch` at bit position
+// `bit_in_block` (0-based, counted from the start of the current
+// block_buffer, per channel). Abstracts away the two container layouts:
+//   DSF: each channel occupies its own contiguous run of block_size_bytes,
+//        bits read LSB-first.
+//   DFF: channels are interleaved byte-by-byte across the buffer, bits read
+//        MSB-first.
+static inline double dsd_bit_value(const DSDDecoder* decoder, int ch, size_t bit_in_block) {
+    size_t byte_in_channel = bit_in_block / DSD_SAMPLES_PER_BYTE;
+    int bit_in_byte = (int)(bit_in_block % DSD_SAMPLES_PER_BYTE);
+    size_t physical_byte;
+    int bit_pos;
+    if (decoder->file_type == DSD_FILE_DFF) {
+        physical_byte = byte_in_channel * (size_t)decoder->channels + (size_t)ch;
+        bit_pos = 7 - bit_in_byte; // MSB-first
+    } else {
+        physical_byte = (size_t)ch * decoder->block_size_bytes + byte_in_channel;
+        bit_pos = bit_in_byte; // LSB-first
+    }
+    return ((decoder->block_buffer[physical_byte] >> bit_pos) & 1) ? 1.0 : -1.0;
+}
+
 static int dsd_load_next_block(DSDDecoder* decoder) {
     if (!decoder || !decoder->file) return 0;
     size_t bytes_read = fread(decoder->block_buffer, 1, decoder->block_buffer_size, decoder->file);
@@ -149,48 +196,143 @@ static double apply_filter2(FilterState2* state, FilterCoeff2* coeff, double inp
     return output;
 }
 
+// Parses a DSDIFF (.dff) file. On success, leaves `file` positioned at the
+// first byte of raw DSD audio data and fills in decoder->channels and
+// decoder->sample_rate_dsd, plus *out_total_dsd_samples (per-channel sample
+// count) and *out_data_size (raw audio byte count, all channels combined).
+// Returns 0 on success, -1 if the file is malformed or uses compressed
+// (DST) audio, which this decoder does not support.
+static int dsd_parse_dff_header(DSDDecoder* decoder, FILE* file, uint64_t* out_total_dsd_samples, uint64_t* out_data_size) {
+    uint8_t hdr[12];
+    if (fread(hdr, 1, 12, file) != 12 || strncmp((char*)hdr, "FRM8", 4) != 0) return -1;
+    uint64_t frm8_size = read_be64(hdr + 4);
+
+    uint8_t form_type[4];
+    if (fread(form_type, 1, 4, file) != 4 || strncmp((char*)form_type, "DSD ", 4) != 0) return -1;
+
+    uint64_t end_offset = 12 + frm8_size; // absolute end of the FRM8 payload
+
+    int got_fs = 0, got_chnl = 0, got_data = 0;
+    uint32_t sample_rate = 0;
+    int channels = 0;
+    uint64_t data_offset = 0, data_size = 0;
+
+    while ((uint64_t)ftell(file) + 12 <= end_offset) {
+        uint8_t chdr[12];
+        if (fread(chdr, 1, 12, file) != 12) break;
+        uint64_t size = read_be64(chdr + 4);
+        long chunk_data_start = ftell(file);
+
+        if (strncmp((char*)chdr, "PROP", 4) == 0) {
+            uint8_t local_id[4];
+            if (fread(local_id, 1, 4, file) != 4) return -1;
+            if (strncmp((char*)local_id, "SND ", 4) == 0) {
+                uint64_t prop_end = (uint64_t)chunk_data_start + size;
+                while ((uint64_t)ftell(file) + 12 <= prop_end) {
+                    uint8_t shdr[12];
+                    if (fread(shdr, 1, 12, file) != 12) break;
+                    uint64_t ssize = read_be64(shdr + 4);
+                    long sub_data_start = ftell(file);
+
+                    if (strncmp((char*)shdr, "FS ", 3) == 0 && ssize >= 4) {
+                        uint8_t buf4[4];
+                        if (fread(buf4, 1, 4, file) == 4) { sample_rate = read_be32(buf4); got_fs = 1; }
+                    } else if (strncmp((char*)shdr, "CHNL", 4) == 0 && ssize >= 2) {
+                        uint8_t buf2[2];
+                        if (fread(buf2, 1, 2, file) == 2) { channels = ((int)buf2[0] << 8) | (int)buf2[1]; got_chnl = 1; }
+                    } else if (strncmp((char*)shdr, "CMPR", 4) == 0 && ssize >= 4) {
+                        uint8_t buf4[4];
+                        if (fread(buf4, 1, 4, file) == 4 && strncmp((char*)buf4, "DSD ", 4) != 0) {
+                            return -1; // compressed (e.g. DST) audio not supported
+                        }
+                    }
+                    uint64_t padded = ssize + (ssize & 1); // chunks pad to an even boundary
+                    fseek(file, sub_data_start + (long)padded, SEEK_SET);
+                }
+            }
+        } else if (strncmp((char*)chdr, "DSD ", 4) == 0) {
+            data_offset = (uint64_t)chunk_data_start;
+            data_size = size;
+            got_data = 1;
+            break; // raw audio found; any trailing metadata chunks are ignored
+        } else if (strncmp((char*)chdr, "DST ", 4) == 0) {
+            return -1; // compressed audio not supported
+        }
+
+        uint64_t padded = size + (size & 1);
+        fseek(file, chunk_data_start + (long)padded, SEEK_SET);
+    }
+
+    if (!got_fs || !got_chnl || !got_data || channels < 1 || channels > MAX_CHANNELS || data_size == 0) return -1;
+
+    decoder->sample_rate_dsd = (int)sample_rate;
+    decoder->channels = channels;
+    fseek(file, (long)data_offset, SEEK_SET);
+
+    *out_data_size = data_size;
+    *out_total_dsd_samples = (data_size / (uint64_t)channels) * 8ULL;
+    return 0;
+}
+
 DSDDecoder* dsd_decoder_init_file(FILE* file) {
     if (!file) return NULL;
     DSDDecoder* decoder = (DSDDecoder*)calloc(1, sizeof(DSDDecoder));
     if (!decoder) return NULL;
     decoder->file = file;
 
-    // --- Header Parsing ---
-    uint8_t header_buf[80];
-    if (fread(header_buf, 1, 28, file) != 28 || strncmp((char*)header_buf, "DSD ", 4) != 0) { free(decoder); return NULL; }
-    uint64_t fmt_chunk_offset = 28;
-    fseek(file, fmt_chunk_offset, SEEK_SET);
-    if (fread(header_buf, 1, 52, file) != 52 || strncmp((char*)header_buf, "fmt ", 4) != 0) { free(decoder); return NULL; }
+    // --- Header Parsing: sniff the magic to tell DSF (Sony) from DFF/DSDIFF (Philips) ---
+    uint8_t magic[4];
+    if (fread(magic, 1, 4, file) != 4) { free(decoder); return NULL; }
+    fseek(file, 0, SEEK_SET);
 
-    uint64_t fmt_chunk_size = read_le64(header_buf + 4);
-    decoder->channels = read_le32(header_buf + 24);
-    decoder->sample_rate_dsd = read_le32(header_buf + 28);
-    uint64_t total_dsd_samples = read_le64(header_buf + 36);
-    decoder->block_size_bytes = read_le32(header_buf + 44);
+    uint64_t total_dsd_samples = 0;
 
-    if (read_le32(header_buf + 32) != 1 || (decoder->channels < 1 || decoder->channels > MAX_CHANNELS) || decoder->block_size_bytes == 0) { free(decoder); return NULL; }
-    
+    if (strncmp((char*)magic, "FRM8", 4) == 0) {
+        // --- DFF/DSDIFF ---
+        decoder->file_type = DSD_FILE_DFF;
+        uint64_t data_size = 0;
+        if (dsd_parse_dff_header(decoder, file, &total_dsd_samples, &data_size) != 0) { free(decoder); return NULL; }
+        // DSDIFF has no per-channel block layout of its own (channels are
+        // byte-interleaved throughout), so we pick our own read-ahead
+        // granularity (bytes per channel) for the decoder's block_buffer.
+        decoder->block_size_bytes = 4096;
+    } else if (strncmp((char*)magic, "DSD ", 4) == 0) {
+        // --- DSF ---
+        decoder->file_type = DSD_FILE_DSF;
+        uint8_t header_buf[80];
+        if (fread(header_buf, 1, 28, file) != 28 || strncmp((char*)header_buf, "DSD ", 4) != 0) { free(decoder); return NULL; }
+        uint64_t fmt_chunk_offset = 28;
+        fseek(file, fmt_chunk_offset, SEEK_SET);
+        if (fread(header_buf, 1, 52, file) != 52 || strncmp((char*)header_buf, "fmt ", 4) != 0) { free(decoder); return NULL; }
+
+        uint64_t fmt_chunk_size = read_le64(header_buf + 4);
+        decoder->channels = read_le32(header_buf + 24);
+        decoder->sample_rate_dsd = read_le32(header_buf + 28);
+        total_dsd_samples = read_le64(header_buf + 36);
+        decoder->block_size_bytes = read_le32(header_buf + 44);
+
+        if (read_le32(header_buf + 32) != 1 || (decoder->channels < 1 || decoder->channels > MAX_CHANNELS) || decoder->block_size_bytes == 0) { free(decoder); return NULL; }
+
+        fseek(file, fmt_chunk_offset + fmt_chunk_size, SEEK_SET);
+        char chunk_id[12];
+        if (fread(chunk_id, 1, 12, file) != 12 || strncmp(chunk_id, "data", 4) != 0) { free(decoder); return NULL; }
+        // file position is now at the first byte of raw DSD audio data
+    } else {
+        free(decoder);
+        return NULL;
+    }
+
     // PCMサンプルレートの計算 (デシメーションファクターの調整を検討)
-    /*if (decoder->sample_rate_dsd == 2822400) decoder->sample_rate_pcm = 88200; // DSD64 -> PCM 88.2kHz (factor 32)
-    else if (decoder->sample_rate_dsd == 5644800) decoder->sample_rate_pcm = 176400; // DSD128 -> PCM 176.4kHz (factor 32)
-    else if (decoder->sample_rate_dsd == 11289600) decoder->sample_rate_pcm = 352800; // DSD256 -> PCM 352.8kHz (factor 32)
-    else decoder->sample_rate_pcm = decoder->sample_rate_dsd / 32; // Fallback, adjust if needed*/
-    if (decoder->sample_rate_dsd == 2822400) decoder->sample_rate_pcm = 176400;
-    else if (decoder->sample_rate_dsd == 5644800) decoder->sample_rate_pcm = 176400;
-    else if (decoder->sample_rate_dsd == 11289600) decoder->sample_rate_pcm = 176400;
-    else decoder->sample_rate_pcm = decoder->sample_rate_dsd / 32; // Fallback, adjust if needed
+    decoder->sample_rate_pcm = dsd_choose_pcm_rate(decoder->sample_rate_dsd);
+    if (decoder->sample_rate_pcm <= 0) { free(decoder); return NULL; }
 
     size_t decimation_factor = decoder->sample_rate_dsd / decoder->sample_rate_pcm;
+    if (decimation_factor == 0) { free(decoder); return NULL; }
     decoder->totalPCMFrameCount = total_dsd_samples / decimation_factor;
 
     decoder->block_buffer_size = decoder->block_size_bytes * decoder->channels;
     decoder->block_buffer = (uint8_t*)malloc(decoder->block_buffer_size);
     if (!decoder->block_buffer) { free(decoder); return NULL; }
-
-    fseek(file, fmt_chunk_offset + fmt_chunk_size, SEEK_SET);
-    char chunk_id[12];
-    if (fread(chunk_id, 1, 12, file) != 12 || strncmp(chunk_id, "data", 4) != 0) { free(decoder->block_buffer); free(decoder); return NULL; }
-    fseek(file, ftell(file) - 12 + 12, SEEK_SET); // dataチャンクの先頭へ
 
     // --- Initialize filter ---
     double cutoff_freq = decoder->sample_rate_pcm / 2.0; // PCMサンプリングレートの半分
@@ -247,7 +389,6 @@ static void dsd_decoder_estimate_rms(DSDDecoder* decoder, int format) {
 
     for (size_t i = 0; i < ESTIMATION_FRAMES; ++i) {
         for (int ch = 0; ch < decoder->channels; ++ch) {
-            const uint8_t* dsd_channel_data = decoder->block_buffer + (ch * decoder->block_size_bytes);
             double accum = 0.0;
             size_t start_bit = decoder->current_dsd_bit_index;
 
@@ -256,14 +397,10 @@ static void dsd_decoder_estimate_rms(DSDDecoder* decoder, int format) {
                 if (current_bit >= block_size_bits) {
                     // 推定中にファイルの終わりに来た場合
                     if (!dsd_load_next_block(decoder)) goto end_estimation_loop;
-                    dsd_channel_data = decoder->block_buffer + (ch * decoder->block_size_bytes);
                     start_bit = 0;
                     current_bit = k;
                 }
-                size_t byte_idx = current_bit / DSD_SAMPLES_PER_BYTE;
-                //int bit_pos = 7 - (current_bit % DSD_SAMPLES_PER_BYTE);
-                int bit_pos = current_bit % DSD_SAMPLES_PER_BYTE;
-                double dsd_val = ((dsd_channel_data[byte_idx] >> bit_pos) & 1) ? 1.0 : -1.0;
+                double dsd_val = dsd_bit_value(decoder, ch, current_bit);
 
                 double temp = dsd_val;
                 for (int stage = 0; stage < 4; ++stage) {
@@ -344,7 +481,6 @@ size_t dsd_decoder_read_pcm_frames(DSDDecoder* decoder, size_t frames_to_read, v
     double filtered[MAX_CHANNELS]; // 各チャンネルのフィルタ出力
     for (size_t i = 0; i < frames_to_read; ++i) {
         for (int ch = 0; ch < decoder->channels; ++ch) {
-            const uint8_t* dsd_channel_data = decoder->block_buffer + (ch * decoder->block_size_bytes);
             size_t start_bit = decoder->current_dsd_bit_index;
 
             double accum = 0.0;
@@ -352,14 +488,12 @@ size_t dsd_decoder_read_pcm_frames(DSDDecoder* decoder, size_t frames_to_read, v
                 size_t current_bit = start_bit + k;
                 if (current_bit >= block_size_bits) {
                     if (!dsd_load_next_block(decoder)) goto end_loop;
-                    dsd_channel_data = decoder->block_buffer + (ch * decoder->block_size_bytes);
                     start_bit = 0;
                     current_bit = k;
                 }
-                size_t byte_idx = current_bit / DSD_SAMPLES_PER_BYTE;
-                int bit_pos = current_bit % DSD_SAMPLES_PER_BYTE; // DSF仕様: LSBファースト
-
-                double dsd_val = ((dsd_channel_data[byte_idx] >> bit_pos) & 1) ? 1.0 : -1.0;
+                // Bit order/layout (LSB-first blocked for DSF, MSB-first
+                // interleaved for DFF) is handled inside dsd_bit_value().
+                double dsd_val = dsd_bit_value(decoder, ch, current_bit);
 
                 // RMS推定時と同様に、1ビットごとにローパスフィルタを通してから平均化(間引き)する
                 double temp = dsd_val;
