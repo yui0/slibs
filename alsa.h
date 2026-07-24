@@ -1,5 +1,5 @@
 /* public domain Simple, Minimalistic, Audio library for ALSA
- *	©2017,2020 Yuichiro Nakada
+ *	©2017,2020,2026 Yuichiro Nakada
  *
  * Basic usage:
  *	AUDIO a;
@@ -20,10 +20,28 @@ typedef struct {
 	snd_pcm_uframes_t frames;
 	char *buffer;
 	int size;
+
+	// Parameters AUDIO_init() was called with, saved so AUDIO_reopen() can
+	// reopen the exact same device/config after AUDIO_release() lets it go.
+	char dev[128];
+	unsigned int freq;
+	int ch;
+	int req_frames;
+	int flag;
+	int format;
 } AUDIO;
 
 int AUDIO_init(AUDIO *thiz, char *dev, unsigned int freq, int ch, int frames, int flag, int format)
 {
+	// Remember the request so AUDIO_reopen() can recreate it later, after
+	// a AUDIO_release() has closed the handle to free up the sound card.
+	snprintf(thiz->dev, sizeof(thiz->dev), "%s", dev ? dev : "default");
+	thiz->freq = freq;
+	thiz->ch = ch;
+	thiz->req_frames = frames;
+	thiz->flag = flag;
+	thiz->format = format;
+
 	// Open PCM device.
 	int rc = snd_pcm_open(&thiz->handle, dev, flag ? SND_PCM_STREAM_PLAYBACK : SND_PCM_STREAM_CAPTURE, 0);
 	if (rc < 0) {
@@ -145,6 +163,39 @@ void AUDIO_close(AUDIO *thiz)
 	snd_pcm_drain(thiz->handle);
 	snd_pcm_close(thiz->handle);
 	free(thiz->buffer);
+}
+
+// Fully lets go of the sound card: drains and snd_pcm_close()'s the handle,
+// so another process can open the same device while we're "paused". Unlike
+// snd_pcm_pause(), this actually releases the hardware. The AUDIO struct
+// (buffer, saved params) stays intact so AUDIO_reopen() can bring it back.
+// Safe to call more than once / on an already-released AUDIO.
+void AUDIO_release(AUDIO *thiz)
+{
+	if (!thiz->handle) {
+		return;
+	}
+	snd_pcm_drain(thiz->handle);
+	snd_pcm_close(thiz->handle);
+	thiz->handle = NULL;
+}
+
+// Reopens the device closed by AUDIO_release(), using the same dev/freq/
+// channels/frames/flag/format that were passed to AUDIO_init(). Returns 0
+// on success, matching AUDIO_init()'s return convention. A no-op (returns 0)
+// if the handle is already open.
+int AUDIO_reopen(AUDIO *thiz)
+{
+	if (thiz->handle) {
+		return 0;
+	}
+	if (thiz->buffer) {
+		free(thiz->buffer);
+		thiz->buffer = NULL;
+	}
+	char dev[sizeof(thiz->dev)];
+	snprintf(dev, sizeof(dev), "%s", thiz->dev);
+	return AUDIO_init(thiz, dev, thiz->freq, thiz->ch, thiz->req_frames, thiz->flag, thiz->format);
 }
 
 // Normalize a PCM device string ("hw:7,0", "plughw:Kazane,0", ...) into an

@@ -13,7 +13,7 @@ int main(int argc, char *argv[])
 	if (argc>2) name = argv[2];
 
 	AUDIO a;
-	AUDIO_init(&a, dev, 48000, 1, 32, 0);	// device, 48000 samplerate, 1 channels, 32 frame
+	AUDIO_init(&a, dev, 48000, 1, 32, 0, 0);	// device, 48000 samplerate, 1 channels, 32 frame
 
 	do {
 		int f = AUDIO_frame(&a); 	// audio data in a.buffer

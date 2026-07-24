@@ -14,7 +14,7 @@ int main(int argc, char *argv[])
 	if (argc>2) name = argv[2];
 
 	AUDIO a;
-	AUDIO_init(&a, dev, 48000, 1, 32, 1);	// device, 48000 samplerate, 1 channels, 32 frame
+	AUDIO_init(&a, dev, 48000, 1, 32, 1, 0);	// device, 48000 samplerate, 1 channels, 32 frame
 
 	int frame;
 	FILE *fp = fopen(name, "rb");
