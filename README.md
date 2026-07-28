@@ -26,7 +26,8 @@
 | **[minimp3.h](minimp3.h)**                                            | LGPL                 |  2671 | [MP3 decoder](https://oldforum.puppylinux.com/viewtopic.php?t=59417)
 | **[adpcm.h](adpcm.h)**                                                | public domain        |   320 | ADPCM
 | **[uwma.h](uwma.h)**                                                  | GPL                  |  5045 | wma
-| **[dsd.h](dsd.h)**                                                    | public domain        |   413 | DSD(DSF)
+| **[dsd.h](dsd.h)**                                                    | public domain        |   741 | DSD(DSF)
+| **[dsd_encoder.h](dsd_encoder.h)**                                    | public domain        |   412 | DSD(DSF)
 
 ## 🎥 video
 | library                                                               | license              |  LoC  | description
