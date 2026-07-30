@@ -402,7 +402,7 @@ static void parse_selector_part(Lexer *l, CSSSelectorPart *part) {
         lex_skip_ws(l);
         char attr[CSS_MAX_STR] = {0};
         lex_ident(l, attr, CSS_MAX_STR);
-        strncpy(part->name, attr, CSS_MAX_STR - 1);
+        snprintf(part->name, CSS_MAX_STR, "%s", attr);
         lex_skip_ws(l);
         char nc = lex_peek(l);
         if (nc == ']') {
@@ -418,7 +418,7 @@ static void parse_selector_part(Lexer *l, CSSSelectorPart *part) {
                 op[0] = '='; op[1] = '\0';
                 lex_advance(l);
             }
-            strncpy(part->attr_op, op, 3);
+            snprintf(part->attr_op, sizeof(part->attr_op), "%s", op);
             lex_skip_ws(l);
             if (lex_peek(l) == '"' || lex_peek(l) == '\'') {
                 lex_string(l, part->attr_val, CSS_MAX_STR);
@@ -561,7 +561,7 @@ static void parse_declaration(Lexer *l, CSSDeclaration *decl) {
         *imp = '\0';
         str_trim(raw);
     }
-    strncpy(decl->value, raw, CSS_MAX_VALUE - 1);
+    snprintf(decl->value, CSS_MAX_VALUE, "%s", raw);
     str_trim(decl->value);
 }
 
@@ -685,7 +685,7 @@ static void parse_stylesheet_inner(Lexer *l, CSSStyleSheet *sheet, CSSCallbacks 
                 char tmp[CSS_MAX_VALUE] = {0};
                 lex_until(l, tmp, CSS_MAX_VALUE, ";{");
                 str_trim(tmp);
-                strncpy(at.prelude, tmp, CSS_MAX_VALUE - 1);
+                snprintf(at.prelude, CSS_MAX_VALUE, "%s", tmp);
                 if (lex_peek(l) == ';') lex_advance(l);
                 if (cb && cb->on_at_rule) cb->on_at_rule(cb->user_data, &at);
                 sheet_add_at(sheet, &at);
@@ -697,7 +697,7 @@ static void parse_stylesheet_inner(Lexer *l, CSSStyleSheet *sheet, CSSCallbacks 
                 char tmp[CSS_MAX_VALUE] = {0};
                 lex_until(l, tmp, CSS_MAX_VALUE, "{");
                 str_trim(tmp);
-                strncpy(at.prelude, tmp, CSS_MAX_VALUE - 1);
+                snprintf(at.prelude, CSS_MAX_VALUE, "%s", tmp);
                 lex_skip_ws(l);
                 if (lex_peek(l) == '{') {
                     lex_advance(l);
@@ -735,7 +735,7 @@ static void parse_stylesheet_inner(Lexer *l, CSSStyleSheet *sheet, CSSCallbacks 
                 char tmp[CSS_MAX_VALUE] = {0};
                 lex_until(l, tmp, CSS_MAX_VALUE, "{");
                 str_trim(tmp);
-                strncpy(at.prelude, tmp, CSS_MAX_VALUE - 1);
+                snprintf(at.prelude, CSS_MAX_VALUE, "%s", tmp);
                 lex_skip_ws(l);
                 /* Parse keyframe blocks as nested rules with stop selectors */
                 if (lex_peek(l) == '{') {
@@ -752,7 +752,7 @@ static void parse_stylesheet_inner(Lexer *l, CSSStyleSheet *sheet, CSSCallbacks 
                         str_trim(stop_sel);
                         /* store as type selector for simplicity */
                         if (kf.selector_count < CSS_MAX_SELECTORS) {
-                            strncpy(kf.selectors[0].compounds[0].parts[0].name, stop_sel, CSS_MAX_STR - 1);
+                            snprintf(kf.selectors[0].compounds[0].parts[0].name, CSS_MAX_STR, "%s", stop_sel);
                             kf.selectors[0].compounds[0].parts[0].type = CSS_SEL_TYPE;
                             kf.selectors[0].compounds[0].part_count = 1;
                             kf.selectors[0].compound_count = 1;
@@ -777,7 +777,7 @@ static void parse_stylesheet_inner(Lexer *l, CSSStyleSheet *sheet, CSSCallbacks 
                 char tmp[CSS_MAX_VALUE] = {0};
                 lex_until(l, tmp, CSS_MAX_VALUE, "{");
                 str_trim(tmp);
-                strncpy(at.prelude, tmp, CSS_MAX_VALUE - 1);
+                snprintf(at.prelude, CSS_MAX_VALUE, "%s", tmp);
                 lex_skip_ws(l);
                 CSSRule inner = {0};
                 if (lex_peek(l) == '{') parse_rule_block(l, &inner, NULL);
@@ -793,7 +793,7 @@ static void parse_stylesheet_inner(Lexer *l, CSSStyleSheet *sheet, CSSCallbacks 
             /* Unknown @rule: skip to ';' or end of block */
             char tmp[CSS_MAX_VALUE] = {0};
             lex_until(l, tmp, CSS_MAX_VALUE, ";{");
-            str_trim(tmp); strncpy(at.prelude, tmp, CSS_MAX_VALUE - 1);
+            str_trim(tmp); snprintf(at.prelude, CSS_MAX_VALUE, "%s", tmp);
             if (!lex_eof(l)) {
                 if (lex_peek(l) == ';') lex_advance(l);
                 else if (lex_peek(l) == '{') skip_block(l);
